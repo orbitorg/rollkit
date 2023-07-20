@@ -474,10 +474,10 @@ func (c *FullClient) BlockResults(ctx context.Context, height *int64) (*ctypes.R
 
 	return &ctypes.ResultBlockResults{
 		Height:                int64(h),
-		TxsResults:            resp.DeliverTxs,
-		FinalizeBlockEvents:   append(resp.BeginBlock.Events, resp.EndBlock.Events...),
-		ValidatorUpdates:      resp.EndBlock.ValidatorUpdates,
-		ConsensusParamUpdates: resp.EndBlock.ConsensusParamUpdates,
+		TxsResults:            resp.TxResults,
+		FinalizeBlockEvents:   resp.Events,
+		ValidatorUpdates:      resp.ValidatorUpdates,
+		ConsensusParamUpdates: resp.ConsensusParamUpdates,
 		AppHash:               block.SignedHeader.Header.AppHash,
 	}, nil
 }

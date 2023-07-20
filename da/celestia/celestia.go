@@ -74,7 +74,6 @@ func (c *DataAvailabilityLayerClient) Stop() error {
 	return nil
 }
 
-// SubmitBlocks submits blocks to DA layer.
 func (c *DataAvailabilityLayerClient) SubmitBlocks(ctx context.Context, blocks []*types.Block) da.ResultSubmitBlocks {
 	blobs := make([]*blob.Blob, len(blocks))
 	for blockIndex, block := range blocks {
@@ -102,22 +101,6 @@ func (c *DataAvailabilityLayerClient) SubmitBlocks(ctx context.Context, blocks [
 	txResponse, err := c.rpc.State.SubmitPayForBlob(ctx, math.NewInt(c.config.Fee), c.config.GasLimit, blobs)
 	if err != nil {
 		return da.ResultSubmitBlocks{
-			BaseResult: da.BaseResult{
-				Code:    da.StatusError,
-				Message: err.Error(),
-			},
-		}
-	}
-
-	c.logger.Debug("successfully submitted PayForBlob transaction",
-		"fee", c.config.Fee, "gasLimit", c.config.GasLimit,
-		"daHeight", txResponse.Height, "daTxHash", txResponse.TxHash)
-
-	blobs := []*blob.Blob{blockBlob}
-
-	txResponse, err := c.rpc.State.SubmitPayForBlob(ctx, math.NewInt(c.config.Fee), c.config.GasLimit, blobs)
-	if err != nil {
-		return da.ResultSubmitBlock{
 			BaseResult: da.BaseResult{
 				Code:    da.StatusError,
 				Message: err.Error(),

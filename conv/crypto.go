@@ -6,8 +6,6 @@ import (
 
 	p2p "github.com/cometbft/cometbft/p2p"
 	"github.com/libp2p/go-libp2p/core/crypto"
-
-	"github.com/cometbft/cometbft/p2p"
 )
 
 var (
