@@ -9,10 +9,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/celestiaorg/go-fraud/fraudserv"
 	abci "github.com/cometbft/cometbft/abci/types"
 	cmcrypto "github.com/cometbft/cometbft/crypto"
 	"github.com/cometbft/cometbft/crypto/merkle"
+	cmstate "github.com/cometbft/cometbft/proto/tendermint/state"
 	"github.com/cometbft/cometbft/proxy"
 	cmtypes "github.com/cometbft/cometbft/types"
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -45,13 +45,15 @@ type newBlockEvent struct {
 // Manager is responsible for aggregating transactions into blocks.
 type Manager struct {
 	lastState types.State
+	// lastStateMtx is used by lastState
+	lastStateMtx *sync.RWMutex
+	store        store.Store
 
 	conf    config.BlockManagerConfig
 	genesis *cmtypes.GenesisDoc
 
 	proposerKey crypto.PrivKey
 
-	store    store.Store
 	executor *state.BlockExecutor
 
 	dalc      da.DataAvailabilityLayerClient
@@ -61,8 +63,8 @@ type Manager struct {
 	// height of the rollkit chain stored in-memory
 	height uint64
 
-	HeaderCh chan *types.SignedHeader
-
+	HeaderCh  chan *types.SignedHeader
+	BlockCh   chan *types.Block
 	blockInCh chan newBlockEvent
 	syncCache map[uint64]*types.Block
 
@@ -70,8 +72,6 @@ type Manager struct {
 	retrieveMtx *sync.Mutex
 	// retrieveCond is used to notify sync goroutine (SyncLoop) that it needs to retrieve data
 	retrieveCond *sync.Cond
-
-	lastStateMtx *sync.Mutex
 
 	logger log.Logger
 
@@ -121,7 +121,7 @@ func NewManager(
 		conf.DABlockTime = defaultDABlockTime
 	}
 
-	exec := state.NewBlockExecutor(proposerAddress, conf.NamespaceID, genesis.ChainID, mempool, proxyApp, conf.FraudProofs, eventBus, logger)
+	exec := state.NewBlockExecutor(proposerAddress, conf.NamespaceID, genesis.ChainID, mempool, proxyApp, eventBus, logger)
 	if s.LastBlockHeight+1 == genesis.InitialHeight {
 		ctx := context.Background()
 		res, err := exec.InitChain(ctx, genesis)
@@ -155,9 +155,10 @@ func NewManager(
 		height:      store.Height(),
 		// channels are buffered to avoid blocking on input/output operations, buffer sizes are arbitrary
 		HeaderCh:          make(chan *types.SignedHeader, 100),
+		BlockCh:           make(chan *types.Block, 100),
 		blockInCh:         make(chan newBlockEvent, 100),
 		retrieveMtx:       new(sync.Mutex),
-		lastStateMtx:      new(sync.Mutex),
+		lastStateMtx:      new(sync.RWMutex),
 		syncCache:         make(map[uint64]*types.Block),
 		logger:            logger,
 		txsAvailable:      txsAvailableCh,
@@ -193,7 +194,8 @@ func (m *Manager) AggregationLoop(ctx context.Context, lazy bool) {
 	if height < initialHeight {
 		delay = time.Until(m.genesis.GenesisTime)
 	} else {
-		delay = time.Until(m.lastState.LastBlockTime.Add(m.conf.BlockTime))
+		lastBlockTime := m.getLastBlockTime()
+		delay = time.Until(lastBlockTime.Add(m.conf.BlockTime))
 	}
 
 	if delay > 0 {
@@ -247,57 +249,6 @@ func (m *Manager) AggregationLoop(ctx context.Context, lazy bool) {
 	}
 }
 
-func (m *Manager) SetFraudProofService(fraudProofServ *fraudserv.ProofService) {
-	m.executor.SetFraudProofService(fraudProofServ)
-}
-
-func (m *Manager) ProcessFraudProof(ctx context.Context, cancel context.CancelFunc) {
-	// subscribe to state fraud proof
-	sub, err := m.executor.FraudService.Subscribe(types.StateFraudProofType)
-	if err != nil {
-		m.logger.Error("failed to subscribe to fraud proof gossip", "error", err)
-		return
-	}
-	defer sub.Cancel()
-
-	// continuously process the fraud proofs received via subscription
-	for {
-		// sub.Proof is a blocking call that only returns on proof received or context ended
-		proof, err := sub.Proof(ctx)
-		if err != nil {
-			m.logger.Error("failed to receive gossiped fraud proof", "error", err)
-			return
-		}
-
-		// only handle the state fraud proofs for now
-		fraudProof, ok := proof.(*types.StateFraudProof)
-		if !ok {
-			m.logger.Error("unexpected type received for state fraud proof", "error", err)
-			return
-		}
-		m.logger.Debug("fraud proof received",
-			"block height", fraudProof.BlockHeight,
-			"pre-state app hash", fraudProof.PreStateAppHash,
-			"expected valid app hash", fraudProof.ExpectedValidAppHash,
-			"length of state witness", len(fraudProof.StateWitness),
-		)
-		// TODO(light-client): Set up a new cosmos-sdk app
-		// TODO: Add fraud proof window validation
-
-		success, err := m.executor.VerifyFraudProof(ctx, &fraudProof.FraudProof, fraudProof.ExpectedValidAppHash)
-		if err != nil {
-			m.logger.Error("failed to verify fraud proof", "error", err)
-			continue
-		}
-		if success {
-			// halt chain
-			m.logger.Info("verified fraud proof, halting chain")
-			cancel()
-			return
-		}
-	}
-}
-
 // SyncLoop is responsible for syncing blocks.
 //
 // SyncLoop processes headers gossiped in P2p network to know what's the latest block height,
@@ -320,9 +271,6 @@ func (m *Manager) SyncLoop(ctx context.Context, cancel context.CancelFunc) {
 			m.retrieveCond.Signal()
 
 			err := m.trySyncNextBlock(ctx, daHeight)
-			if err != nil && err.Error() == fmt.Errorf("failed to ApplyBlock: %w", state.ErrFraudProofGenerated).Error() {
-				return
-			}
 			if err != nil {
 				m.logger.Info("failed to sync next block", "error", err)
 			}
@@ -353,7 +301,7 @@ func (m *Manager) trySyncNextBlock(ctx context.Context, daHeight uint64) error {
 
 	if b != nil && commit != nil {
 		m.logger.Info("Syncing block", "height", b.SignedHeader.Header.Height())
-		newState, responses, err := m.executor.ApplyBlock(ctx, m.lastState, b)
+		newState, responses, err := m.applyBlock(ctx, b)
 		if err != nil {
 			return fmt.Errorf("failed to ApplyBlock: %w", err)
 		}
@@ -372,7 +320,7 @@ func (m *Manager) trySyncNextBlock(ctx context.Context, daHeight uint64) error {
 		}
 
 		// SaveValidators commits the DB tx
-		err = m.store.SaveValidators(uint64(b.SignedHeader.Header.Height()), m.lastState.Validators)
+		err = m.saveValidatorsToStore(uint64(b.SignedHeader.Header.Height()))
 		if err != nil {
 			return err
 		}
@@ -382,10 +330,7 @@ func (m *Manager) trySyncNextBlock(ctx context.Context, daHeight uint64) error {
 		if daHeight > newState.DAHeight {
 			newState.DAHeight = daHeight
 		}
-		m.lastStateMtx.Lock()
-		m.lastState = newState
-		m.lastStateMtx.Unlock()
-		err = m.store.UpdateState(m.lastState)
+		err = m.updateState(newState)
 		if err != nil {
 			m.logger.Error("failed to save updated state", "error", err)
 		}
@@ -493,6 +438,8 @@ func (m *Manager) getCommit(header types.Header) (*types.Commit, error) {
 }
 
 func (m *Manager) IsProposer() (bool, error) {
+	m.lastStateMtx.RLock()
+	defer m.lastStateMtx.RUnlock()
 	// if proposer is not set, assume self proposer
 	if m.lastState.Validators.Proposer == nil {
 		return true, nil
@@ -513,9 +460,7 @@ func (m *Manager) publishBlock(ctx context.Context) error {
 	height := m.store.Height()
 	newHeight := height + 1
 
-	m.lastStateMtx.Lock()
 	isProposer, err := m.IsProposer()
-	m.lastStateMtx.Unlock()
 	if err != nil {
 		return fmt.Errorf("error while checking for proposer: %w", err)
 	}
@@ -549,7 +494,7 @@ func (m *Manager) publishBlock(ctx context.Context) error {
 		block = pendingBlock
 	} else {
 		m.logger.Info("Creating and publishing block", "height", newHeight)
-		block = m.executor.CreateBlock(ctx, newHeight, lastCommit, lastHeaderHash, m.lastState)
+		block = m.createBlock(newHeight, lastCommit, lastHeaderHash)
 		m.logger.Debug("block info", "num_tx", len(block.Data.Txs))
 
 		commit, err = m.getCommit(block.SignedHeader.Header)
@@ -560,7 +505,7 @@ func (m *Manager) publishBlock(ctx context.Context) error {
 		// set the commit to current block's signed header
 		block.SignedHeader.Commit = *commit
 
-		block.SignedHeader.Validators = m.lastState.Validators
+		block.SignedHeader.Validators = m.getLastStateValidators()
 
 		// SaveBlock commits the DB tx
 		err = m.store.SaveBlock(block, commit)
@@ -570,7 +515,7 @@ func (m *Manager) publishBlock(ctx context.Context) error {
 	}
 
 	// Apply the block but DONT commit
-	newState, responses, err := m.executor.ApplyBlock(ctx, m.lastState, block)
+	newState, responses, err := m.applyBlock(ctx, block)
 	if err != nil {
 		return err
 	}
@@ -619,7 +564,7 @@ func (m *Manager) publishBlock(ctx context.Context) error {
 	}
 
 	// SaveValidators commits the DB tx
-	err = m.store.SaveValidators(blockHeight, m.lastState.Validators)
+	err = m.saveValidatorsToStore(blockHeight)
 	if err != nil {
 		return err
 	}
@@ -629,16 +574,17 @@ func (m *Manager) publishBlock(ctx context.Context) error {
 
 	newState.DAHeight = atomic.LoadUint64(&m.daHeight)
 	// After this call m.lastState is the NEW state returned from ApplyBlock
-	m.lastState = newState
-
-	// UpdateState commits the DB tx
-	err = m.store.UpdateState(m.lastState)
+	// updateState also commits the DB tx
+	err = m.updateState(newState)
 	if err != nil {
 		return err
 	}
 
 	// Publish header to channel so that header exchange service can broadcast
 	m.HeaderCh <- &block.SignedHeader
+
+	// Publish block to channel so that block exchange service can broadcast
+	m.BlockCh <- block
 
 	m.logger.Debug("successfully proposed block", "proposer", hex.EncodeToString(block.SignedHeader.ProposerAddress), "height", block.SignedHeader.Height())
 
@@ -651,7 +597,7 @@ func (m *Manager) submitBlockToDA(ctx context.Context, block *types.Block) error
 	submitted := false
 	backoff := initialBackoff
 	for attempt := 1; ctx.Err() == nil && !submitted && attempt <= maxSubmitAttempts; attempt++ {
-		res := m.dalc.SubmitBlock(ctx, block)
+		res := m.dalc.SubmitBlocks(ctx, []*types.Block{block})
 		if res.Code == da.StatusSuccess {
 			m.logger.Info("successfully submitted Rollkit block to DA layer", "rollkitHeight", block.SignedHeader.Header.Height(), "daHeight", res.DAHeight)
 			submitted = true
@@ -677,6 +623,47 @@ func (m *Manager) exponentialBackoff(backoff time.Duration) time.Duration {
 	return backoff
 }
 
+// Updates the state stored in manager's store along the manager's lastState
+func (m *Manager) updateState(s types.State) error {
+	m.lastStateMtx.Lock()
+	defer m.lastStateMtx.Unlock()
+	err := m.store.UpdateState(s)
+	if err != nil {
+		return err
+	}
+	m.lastState = s
+	return nil
+}
+
+func (m *Manager) saveValidatorsToStore(height uint64) error {
+	m.lastStateMtx.RLock()
+	defer m.lastStateMtx.RUnlock()
+	return m.store.SaveValidators(height, m.lastState.Validators)
+}
+
+func (m *Manager) getLastStateValidators() *cmtypes.ValidatorSet {
+	m.lastStateMtx.RLock()
+	defer m.lastStateMtx.RUnlock()
+	return m.lastState.Validators
+}
+
+func (m *Manager) getLastBlockTime() time.Time {
+	m.lastStateMtx.RLock()
+	defer m.lastStateMtx.RUnlock()
+	return m.lastState.LastBlockTime
+}
+
+func (m *Manager) createBlock(height uint64, lastCommit *types.Commit, lastHeaderHash types.Hash) *types.Block {
+	m.lastStateMtx.RLock()
+	defer m.lastStateMtx.RUnlock()
+	return m.executor.CreateBlock(height, lastCommit, lastHeaderHash, m.lastState)
+}
+
+func (m *Manager) applyBlock(ctx context.Context, block *types.Block) (types.State, *cmstate.ABCIResponses, error) {
+	m.lastStateMtx.RLock()
+	defer m.lastStateMtx.RUnlock()
+	return m.executor.ApplyBlock(ctx, m.lastState, block)
+}
 func updateState(s *types.State, res *abci.ResponseInitChain) {
 	// If the app did not return an app hash, we keep the one set from the genesis doc in
 	// the state. We don't set appHash since we don't want the genesis doc app hash

@@ -22,26 +22,32 @@ func TestBlockIndexer(t *testing.T) {
 	prefixStore := (ktds.Wrap(kvStore, ktds.PrefixTransform{Prefix: ds.NewKey("block_events")}).Children()[0]).(ds.TxnDatastore)
 	indexer := blockidxkv.New(context.Background(), prefixStore)
 
-	require.NoError(t, indexer.Index(types.EventDataNewBlockEvents{
-		Height: 1,
-		Events: []abci.Event{
-			{
-				Type: "begin_event",
-				Attributes: []abci.EventAttribute{
-					{
-						Key:   "proposer",
-						Value: "FCAA001",
-						Index: true,
+	require.NoError(t, indexer.Index(types.EventDataNewBlockHeader{
+		Header: types.Header{Height: 1},
+		ResultBeginBlock: abci.ResponseBeginBlock{
+			Events: []abci.Event{
+				{
+					Type: "begin_event",
+					Attributes: []abci.EventAttribute{
+						{
+							Key:   string("proposer"),
+							Value: string("FCAA001"),
+							Index: true,
+						},
 					},
 				},
 			},
-			{
-				Type: "end_event",
-				Attributes: []abci.EventAttribute{
-					{
-						Key:   "foo",
-						Value: "100",
-						Index: true,
+		},
+		ResultEndBlock: abci.ResponseEndBlock{
+			Events: []abci.Event{
+				{
+					Type: "end_event",
+					Attributes: []abci.EventAttribute{
+						{
+							Key:   string("foo"),
+							Value: string("100"),
+							Index: true,
+						},
 					},
 				},
 			},
@@ -54,26 +60,32 @@ func TestBlockIndexer(t *testing.T) {
 			index = true
 		}
 
-		require.NoError(t, indexer.Index(types.EventDataNewBlockEvents{
-			Height: int64(i),
-			Events: []abci.Event{
-				{
-					Type: "begin_event",
-					Attributes: []abci.EventAttribute{
-						{
-							Key:   "proposer",
-							Value: "FCAA001",
-							Index: true,
+		require.NoError(t, indexer.Index(types.EventDataNewBlockHeader{
+			Header: types.Header{Height: int64(i)},
+			ResultBeginBlock: abci.ResponseBeginBlock{
+				Events: []abci.Event{
+					{
+						Type: "begin_event",
+						Attributes: []abci.EventAttribute{
+							{
+								Key:   string("proposer"),
+								Value: string("FCAA001"),
+								Index: true,
+							},
 						},
 					},
 				},
-				{
-					Type: "end_event",
-					Attributes: []abci.EventAttribute{
-						{
-							Key:   "foo",
-							Value: fmt.Sprintf("%d", i),
-							Index: index,
+			},
+			ResultEndBlock: abci.ResponseEndBlock{
+				Events: []abci.Event{
+					{
+						Type: "end_event",
+						Attributes: []abci.EventAttribute{
+							{
+								Key:   string("foo"),
+								Value: string(fmt.Sprintf("%d", i)),
+								Index: index,
+							},
 						},
 					},
 				},

@@ -32,8 +32,8 @@ func BenchmarkTxSearch(b *testing.B) {
 			{
 				Type: "transfer",
 				Attributes: []abci.EventAttribute{
-					{Key: "address", Value: fmt.Sprintf("address_%d", i%100), Index: true},
-					{Key: "amount", Value: "50", Index: true},
+					{Key: string("address"), Value: string(fmt.Sprintf("address_%d", i%100)), Index: true},
+					{Key: string("amount"), Value: string("50"), Index: true},
 				},
 			},
 		}

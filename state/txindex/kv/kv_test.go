@@ -15,7 +15,7 @@ import (
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cometbft/cometbft/libs/pubsub/query"
-	tmrand "github.com/cometbft/cometbft/libs/rand"
+	cmrand "github.com/cometbft/cometbft/libs/rand"
 	"github.com/cometbft/cometbft/types"
 
 	"github.com/rollkit/rollkit/state/txindex"
@@ -164,7 +164,8 @@ func TestTxSearchWithCancelation(t *testing.T) {
 }
 
 func TestTxSearchDeprecatedIndexing(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	kvStore, _ := store.NewDefaultInMemoryKVStore()
 	indexer := NewTxIndex(ctx, kvStore)
 
@@ -246,7 +247,10 @@ func TestTxSearchDeprecatedIndexing(t *testing.T) {
 
 func TestTxSearchOneTxWithMultipleSameTagsButDifferentValues(t *testing.T) {
 	kvStore, _ := store.NewDefaultInMemoryKVStore()
-	indexer := NewTxIndex(context.Background(), kvStore)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	indexer := NewTxIndex(ctx, kvStore)
 
 	txResult := txResultWithEvents([]abci.Event{
 		{Type: "account", Attributes: []abci.EventAttribute{{Key: "number", Value: "1", Index: true}}},
@@ -256,9 +260,7 @@ func TestTxSearchOneTxWithMultipleSameTagsButDifferentValues(t *testing.T) {
 	err := indexer.Index(txResult)
 	require.NoError(t, err)
 
-	ctx := context.Background()
-
-	results, err := indexer.Search(ctx, query.MustCompile("account.number >= 1"))
+	results, err := indexer.Search(ctx, query.MustParse("account.number >= 1"))
 	assert.NoError(t, err)
 
 	assert.Len(t, results, 1)
@@ -269,7 +271,9 @@ func TestTxSearchOneTxWithMultipleSameTagsButDifferentValues(t *testing.T) {
 
 func TestTxSearchMultipleTxs(t *testing.T) {
 	kvStore, _ := store.NewDefaultInMemoryKVStore()
-	indexer := NewTxIndex(context.Background(), kvStore)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	indexer := NewTxIndex(ctx, kvStore)
 
 	// indexed first, but bigger height (to test the order of transactions)
 	txResult := txResultWithEvents([]abci.Event{
@@ -314,9 +318,7 @@ func TestTxSearchMultipleTxs(t *testing.T) {
 	err = indexer.Index(txResult4)
 	require.NoError(t, err)
 
-	ctx := context.Background()
-
-	results, err := indexer.Search(ctx, query.MustCompile("account.number >= 1"))
+	results, err := indexer.Search(ctx, query.MustParse("account.number >= 1"))
 	assert.NoError(t, err)
 
 	require.Len(t, results, 3)
@@ -344,12 +346,14 @@ func benchmarkTxIndex(txsCount int64, b *testing.B) {
 
 	store, err := store.NewDefaultKVStore(dir, "db", "tx_index")
 	require.NoError(b, err)
-	indexer := NewTxIndex(context.Background(), store)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	indexer := NewTxIndex(ctx, store)
 
 	batch := txindex.NewBatch(txsCount)
 	txIndex := uint32(0)
 	for i := int64(0); i < txsCount; i++ {
-		tx := tmrand.Bytes(250)
+		tx := cmrand.Bytes(250)
 		txResult := &abci.TxResult{
 			Height: 1,
 			Index:  txIndex,

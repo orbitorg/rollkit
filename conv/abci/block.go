@@ -26,7 +26,7 @@ func ToABCIHeaderPB(header *types.Header) (cmproto.Header, error) {
 				Hash:  nil,
 			},
 		},
-		LastCommitHash:     header.LastCommitHash[:],
+		LastCommitHash:     header.LastHeaderHash[:],
 		DataHash:           header.DataHash[:],
 		ValidatorsHash:     header.AggregatorsHash[:],
 		NextValidatorsHash: nil,
@@ -76,7 +76,7 @@ func ToABCIBlock(block *types.Block) (*cmtypes.Block, error) {
 	if err != nil {
 		return nil, err
 	}
-	abciCommit := ToABCICommit(&block.SignedHeader.Commit, block.SignedHeader.Header.BaseHeader.Height, block.SignedHeader.Hash())
+	abciCommit := block.SignedHeader.Commit.ToABCICommit(int64(block.SignedHeader.Header.BaseHeader.Height), block.SignedHeader.Hash())
 	// This assumes that we have only one signature
 	if len(abciCommit.Signatures) == 1 {
 		abciCommit.Signatures[0].ValidatorAddress = block.SignedHeader.Header.ProposerAddress

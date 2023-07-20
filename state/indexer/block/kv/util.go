@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/google/orderedcode"
-
 	"github.com/cometbft/cometbft/libs/pubsub/query/syntax"
 	"github.com/cometbft/cometbft/types"
-
+	"github.com/google/orderedcode"
 	"github.com/rollkit/rollkit/state/indexer"
 	"github.com/rollkit/rollkit/store"
 )

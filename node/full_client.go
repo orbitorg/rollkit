@@ -94,7 +94,7 @@ func (c *FullClient) ABCIQueryWithOptions(ctx context.Context, path string, data
 }
 
 // BroadcastTxCommit returns with the responses from CheckTx and DeliverTx.
-// More: https://docs.cometbft.com/master/rpc/#/Tx/broadcast_tx_commit
+// More: https://docs.tendermint.com/master/rpc/#/Tx/broadcast_tx_commit
 func (c *FullClient) BroadcastTxCommit(ctx context.Context, tx cmtypes.Tx) (*ctypes.ResultBroadcastTxCommit, error) {
 	// This implementation corresponds to Tendermints implementation from rpc/core/mempool.go.
 	// ctx.RemoteAddr godoc: If neither HTTPReq nor WSConn is set, an empty string is returned.
@@ -326,11 +326,11 @@ func (c *FullClient) BlockchainInfo(ctx context.Context, minHeight, maxHeight in
 			return nil, err
 		}
 		if block != nil {
-			tmblockmeta, err := abciconv.ToABCIBlockMeta(block)
+			cmblockmeta, err := abciconv.ToABCIBlockMeta(block)
 			if err != nil {
 				return nil, err
 			}
-			blocks = append(blocks, tmblockmeta)
+			blocks = append(blocks, cmblockmeta)
 		}
 	}
 
@@ -493,7 +493,7 @@ func (c *FullClient) Commit(ctx context.Context, height *int64) (*ctypes.ResultC
 	if err != nil {
 		return nil, err
 	}
-	commit := abciconv.ToABCICommit(com, heightValue, b.SignedHeader.Hash())
+	commit := com.ToABCICommit(int64(heightValue), b.SignedHeader.Hash())
 	block, err := abciconv.ToABCIBlock(b)
 	if err != nil {
 		return nil, err
@@ -718,7 +718,10 @@ func (c *FullClient) Status(ctx context.Context) (*ctypes.ResultStatus, error) {
 		state.Version.Consensus.Block,
 		state.Version.Consensus.App,
 	)
-	id, addr, network := c.node.P2P.Info()
+	id, addr, network, err := c.node.P2P.Info()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load node p2p2 info: %w", err)
+	}
 	txIndexerStatus := "on"
 
 	result := &ctypes.ResultStatus{

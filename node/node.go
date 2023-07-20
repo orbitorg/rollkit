@@ -8,7 +8,7 @@ import (
 	"github.com/cometbft/cometbft/libs/log"
 	proxy "github.com/cometbft/cometbft/proxy"
 	rpcclient "github.com/cometbft/cometbft/rpc/client"
-	tmtypes "github.com/cometbft/cometbft/types"
+	cmtypes "github.com/cometbft/cometbft/types"
 
 	"github.com/rollkit/rollkit/config"
 )
@@ -28,7 +28,7 @@ func NewNode(
 	p2pKey crypto.PrivKey,
 	signingKey crypto.PrivKey,
 	appClient proxy.ClientCreator,
-	genesis *tmtypes.GenesisDoc,
+	genesis *cmtypes.GenesisDoc,
 	logger log.Logger,
 ) (Node, error) {
 	if !conf.Light {
