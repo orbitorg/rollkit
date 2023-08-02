@@ -2,21 +2,10 @@ package da
 
 import (
 	"context"
-	"errors"
-
 	ds "github.com/ipfs/go-datastore"
 
 	"github.com/rollkit/rollkit/log"
 	"github.com/rollkit/rollkit/types"
-)
-
-var (
-	// ErrDataNotFound is used to indicated that requested data failed to be retrieved.
-	ErrDataNotFound = errors.New("data not found")
-	// ErrNamespaceNotFound is used to indicate that the block contains data, but not for the requested namespace.
-	ErrNamespaceNotFound = errors.New("namespace not found in data")
-	ErrBlobNotFound      = errors.New("blob: not found")
-	ErrEDSNotFound       = errors.New("eds not found")
 )
 
 // StatusCode is a type for DA layer return status.

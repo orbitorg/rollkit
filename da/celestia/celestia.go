@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -21,6 +22,15 @@ import (
 	"github.com/rollkit/rollkit/log"
 	"github.com/rollkit/rollkit/types"
 	pb "github.com/rollkit/rollkit/types/pb/rollkit"
+)
+
+var (
+	// ErrDataNotFound is used to indicated that requested data failed to be retrieved.
+	ErrDataNotFound = errors.New("data not found")
+	// ErrNamespaceNotFound is used to indicate that the block contains data, but not for the requested namespace.
+	ErrNamespaceNotFound = errors.New("namespace not found in data")
+	ErrBlobNotFound      = errors.New("blob: not found")
+	ErrEDSNotFound       = errors.New("eds not found")
 )
 
 // DataAvailabilityLayerClient use celestia-node public API.
@@ -180,11 +190,11 @@ func dataRequestErrorToStatus(err error) da.StatusCode {
 		// ErrNamespaceNotFound is a success because it means no retries are necessary, the
 		// namespace doesn't exist in the block.
 		// TODO: Once node implements non-inclusion proofs, ErrNamespaceNotFound needs to be verified
-		strings.Contains(err.Error(), da.ErrNamespaceNotFound.Error()):
+		strings.Contains(err.Error(), ErrNamespaceNotFound.Error()):
 		return da.StatusSuccess
-	case strings.Contains(err.Error(), da.ErrDataNotFound.Error()),
-		strings.Contains(err.Error(), da.ErrEDSNotFound.Error()),
-		strings.Contains(err.Error(), da.ErrBlobNotFound.Error()):
+	case strings.Contains(err.Error(), ErrDataNotFound.Error()),
+		strings.Contains(err.Error(), ErrEDSNotFound.Error()),
+		strings.Contains(err.Error(), ErrBlobNotFound.Error()):
 		return da.StatusNotFound
 	default:
 		return da.StatusError
