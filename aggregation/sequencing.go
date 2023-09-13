@@ -1,4 +1,4 @@
-package sequencer
+package aggregation
 
 import (
 	"github.com/rollkit/rollkit/types"
@@ -10,7 +10,7 @@ const (
 	ConsensusFault
 )
 
-type Sequencer interface {
+type Aggregation interface {
 	CheckSafetyInvariant(newBlock *types.Block, oldBlocks []*types.Block) uint
 	ApplyForkChoiceRule(blocks []*types.Block) (*types.Block, error)
 }
