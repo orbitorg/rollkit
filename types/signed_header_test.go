@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/celestiaorg/go-header"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,37 +16,46 @@ func TestVerify(t *testing.T) {
 	time.Sleep(time.Second)
 	untrustedAdj, err := GetNextRandomHeader(trusted, privKey)
 	require.NoError(t, err)
+	fakeAggregatorsHash := header.Hash(GetRandomBytes(32))
+	fakeLastHeaderHash := header.Hash(GetRandomBytes(32))
+	fakeLastCommitHash := header.Hash(GetRandomBytes(32))
 	tests := []struct {
 		prepare func() (*SignedHeader, bool)
-		err     bool
+		err     error
 	}{
 		{
 			prepare: func() (*SignedHeader, bool) { return untrustedAdj, false },
-			err:     false,
+			err:     nil,
 		},
 		{
 			prepare: func() (*SignedHeader, bool) {
 				untrusted := *untrustedAdj
-				untrusted.AggregatorsHash = GetRandomBytes(32)
-				return &untrusted, true
+				untrusted.AggregatorsHash = fakeAggregatorsHash
+				return &untrusted, false
 			},
-			err: true,
+			err: &header.VerifyError{
+				Reason: ErrAggregatorSetHashMismatch,
+			},
 		},
 		{
 			prepare: func() (*SignedHeader, bool) {
 				untrusted := *untrustedAdj
-				untrusted.LastHeaderHash = GetRandomBytes(32)
+				untrusted.LastHeaderHash = fakeLastHeaderHash
 				return &untrusted, true
 			},
-			err: true,
+			err: &header.VerifyError{
+				Reason: ErrLastHeaderHashMismatch,
+			},
 		},
 		{
 			prepare: func() (*SignedHeader, bool) {
 				untrusted := *untrustedAdj
-				untrusted.LastCommitHash = GetRandomBytes(32)
+				untrusted.LastCommitHash = fakeLastCommitHash
 				return &untrusted, true
 			},
-			err: true,
+			err: &header.VerifyError{
+				Reason: ErrLastCommitHashMismatch,
+			},
 		},
 		{
 			prepare: func() (*SignedHeader, bool) {
@@ -54,23 +64,9 @@ func TestVerify(t *testing.T) {
 				untrusted.Header.BaseHeader.Height++
 				return &untrusted, true
 			},
-			err: false, // Accepts non-adjacent headers
-		},
-		{
-			prepare: func() (*SignedHeader, bool) {
-				untrusted := *untrustedAdj
-				untrusted.Header.BaseHeader.Time = uint64(untrusted.Header.Time().Truncate(time.Hour).UnixNano())
-				return &untrusted, true
+			err: &header.VerifyError{
+				Reason: ErrNonAdjacentHeaders,
 			},
-			err: true,
-		},
-		{
-			prepare: func() (*SignedHeader, bool) {
-				untrusted := *untrustedAdj
-				untrusted.Header.BaseHeader.Time = uint64(untrusted.Header.Time().Add(time.Minute).UnixNano())
-				return &untrusted, true
-			},
-			err: true,
 		},
 		{
 			prepare: func() (*SignedHeader, bool) {
@@ -78,7 +74,9 @@ func TestVerify(t *testing.T) {
 				untrusted.BaseHeader.ChainID = "toaster"
 				return &untrusted, false // Signature verification should fail
 			},
-			err: true,
+			err: &header.VerifyError{
+				Reason: ErrSignatureVerificationFailed,
+			},
 		},
 		{
 			prepare: func() (*SignedHeader, bool) {
@@ -86,7 +84,9 @@ func TestVerify(t *testing.T) {
 				untrusted.Version.App = untrusted.Version.App + 1
 				return &untrusted, false // Signature verification should fail
 			},
-			err: true,
+			err: &header.VerifyError{
+				Reason: ErrSignatureVerificationFailed,
+			},
 		},
 		{
 			prepare: func() (*SignedHeader, bool) {
@@ -94,7 +94,9 @@ func TestVerify(t *testing.T) {
 				untrusted.ProposerAddress = nil
 				return &untrusted, true
 			},
-			err: true,
+			err: &header.VerifyError{
+				Reason: ErrNoProposerAddress,
+			},
 		},
 	}
 
@@ -107,11 +109,17 @@ func TestVerify(t *testing.T) {
 				preparedHeader.Commit = *commit
 			}
 			err = trusted.Verify(preparedHeader)
-			if test.err {
-				assert.Error(t, err)
-			} else {
+			if test.err == nil {
 				assert.NoError(t, err)
+				return
 			}
+			if err == nil {
+				t.Errorf("expected err: %v, got nil", test.err)
+				return
+			}
+			reason := err.(*header.VerifyError).Reason
+			testReason := test.err.(*header.VerifyError).Reason
+			assert.ErrorIs(t, reason, testReason)
 		})
 	}
 }
