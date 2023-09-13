@@ -27,6 +27,7 @@ import (
 	"github.com/rollkit/rollkit/mempool"
 	mempoolv1 "github.com/rollkit/rollkit/mempool/v1"
 	"github.com/rollkit/rollkit/p2p"
+	"github.com/rollkit/rollkit/sequencer"
 	"github.com/rollkit/rollkit/state/indexer"
 	blockidxkv "github.com/rollkit/rollkit/state/indexer/block/kv"
 	"github.com/rollkit/rollkit/state/txindex"
@@ -71,6 +72,7 @@ type FullNode struct {
 	Store        store.Store
 	blockManager *block.Manager
 	dalc         da.DataAvailabilityLayerClient
+	sequencer    sequencer.Sequencer
 
 	TxIndexer      txindex.TxIndexer
 	BlockIndexer   indexer.BlockIndexer
@@ -142,6 +144,17 @@ func newFullNode(
 		return nil, fmt.Errorf("data availability layer client initialization error: %w", err)
 	}
 
+	var aggregator sequencer.Sequencer
+	switch conf.AggregatorScheme {
+	case "centralized":
+		aggregator, err = sequencer.NewCentralizedSequencer(genesis)
+	default:
+		aggregator, err = sequencer.NewMockSequencer(nil)
+	}
+	if err != nil {
+		return nil, err
+	}
+
 	indexerService, txIndexer, blockIndexer, err := createAndStartIndexerService(ctx, conf, indexerKV, eventBus, logger)
 	if err != nil {
 		return nil, err
@@ -177,6 +190,7 @@ func newFullNode(
 		P2P:               client,
 		blockManager:      blockManager,
 		dalc:              dalc,
+		sequencer:         aggregator,
 		Mempool:           mp,
 		mempoolIDs:        mpIDs,
 		incomingTxCh:      make(chan *p2p.GossipMessage),

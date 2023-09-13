@@ -11,16 +11,17 @@ import (
 )
 
 const (
-	flagAggregator     = "rollkit.aggregator"
-	flagDALayer        = "rollkit.da_layer"
-	flagDAConfig       = "rollkit.da_config"
-	flagBlockTime      = "rollkit.block_time"
-	flagDABlockTime    = "rollkit.da_block_time"
-	flagDAStartHeight  = "rollkit.da_start_height"
-	flagNamespaceID    = "rollkit.namespace_id"
-	flagLight          = "rollkit.light"
-	flagTrustedHash    = "rollkit.trusted_hash"
-	flagLazyAggregator = "rollkit.lazy_aggregator"
+	flagAggregator       = "rollkit.aggregator"
+	flagDALayer          = "rollkit.da_layer"
+	flagDAConfig         = "rollkit.da_config"
+	flagBlockTime        = "rollkit.block_time"
+	flagDABlockTime      = "rollkit.da_block_time"
+	flagDAStartHeight    = "rollkit.da_start_height"
+	flagNamespaceID      = "rollkit.namespace_id"
+	flagLight            = "rollkit.light"
+	flagTrustedHash      = "rollkit.trusted_hash"
+	flagLazyAggregator   = "rollkit.lazy_aggregator"
+	flagAggregatorScheme = "rollkit.aggregator_scheme"
 )
 
 // NodeConfig stores Rollkit node configuration.
@@ -37,7 +38,8 @@ type NodeConfig struct {
 	DAConfig           string `mapstructure:"da_config"`
 	Light              bool   `mapstructure:"light"`
 	HeaderConfig       `mapstructure:",squash"`
-	LazyAggregator     bool `mapstructure:"lazy_aggregator"`
+	LazyAggregator     bool   `mapstructure:"lazy_aggregator"`
+	AggregatorScheme   string `mapstructure:"aggregator_scheme"`
 }
 
 // HeaderConfig allows node to pass the initial trusted header hash to start the header exchange service
@@ -69,6 +71,7 @@ func (nc *NodeConfig) GetViperConfig(v *viper.Viper) error {
 	nc.LazyAggregator = v.GetBool(flagLazyAggregator)
 	nsID := v.GetString(flagNamespaceID)
 	nc.Light = v.GetBool(flagLight)
+	nc.AggregatorScheme = v.GetString(flagAggregatorScheme)
 	bytes, err := hex.DecodeString(nsID)
 	if err != nil {
 		return err
@@ -85,6 +88,7 @@ func AddFlags(cmd *cobra.Command) {
 	def := DefaultNodeConfig
 	cmd.Flags().Bool(flagAggregator, def.Aggregator, "run node in aggregator mode")
 	cmd.Flags().Bool(flagLazyAggregator, def.LazyAggregator, "wait for transactions, don't build empty blocks")
+	cmd.Flags().String(flagAggregatorScheme, def.AggregatorScheme, "Aggregator Scheme (default is centralized)")
 	cmd.Flags().String(flagDALayer, def.DALayer, "Data Availability Layer Client name (mock or grpc")
 	cmd.Flags().String(flagDAConfig, def.DAConfig, "Data Availability Layer Client config")
 	cmd.Flags().Duration(flagBlockTime, def.BlockTime, "block time (for aggregator mode)")
