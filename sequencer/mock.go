@@ -13,7 +13,10 @@ func NewMockSequencer(genesis *cmtypes.GenesisDoc) (Sequencer, error) {
 
 type MockSequencer struct{}
 
-func (s MockSequencer) VerifyProposer(last types.Header, next types.Header) error {
-	// dummy implementation that allows anything
-	return nil
+func (s MockSequencer) CheckSafetyInvariant(newBlock *types.Block, oldBlocks []*types.Block) uint {
+	return Ok
+}
+
+func (s MockSequencer) ApplyForkChoiceRule(blocks []*types.Block) (*types.Block, error) {
+	return blocks[0], nil
 }

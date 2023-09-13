@@ -38,5 +38,9 @@ func (s CentralizedSequencer) CheckSafetyInvariant(newBlock *types.Block, oldBlo
 }
 
 func (s CentralizedSequencer) ApplyForkChoiceRule(blocks []*types.Block) (*types.Block, error) {
-	return nil, nil
+	// Centralized sequencers shouldn't ever fork.
+	if len(blocks) > 1 {
+		return nil, fmt.Errorf("apparent safety violation")
+	}
+	return blocks[0], nil
 }
