@@ -20,6 +20,7 @@ import (
 	proxy "github.com/cometbft/cometbft/proxy"
 	cmtypes "github.com/cometbft/cometbft/types"
 
+	"github.com/rollkit/rollkit/aggregation"
 	"github.com/rollkit/rollkit/block"
 	"github.com/rollkit/rollkit/config"
 	"github.com/rollkit/rollkit/da"
@@ -27,7 +28,6 @@ import (
 	"github.com/rollkit/rollkit/mempool"
 	mempoolv1 "github.com/rollkit/rollkit/mempool/v1"
 	"github.com/rollkit/rollkit/p2p"
-	"github.com/rollkit/rollkit/sequencer"
 	"github.com/rollkit/rollkit/state/indexer"
 	blockidxkv "github.com/rollkit/rollkit/state/indexer/block/kv"
 	"github.com/rollkit/rollkit/state/txindex"
@@ -72,7 +72,7 @@ type FullNode struct {
 	Store        store.Store
 	blockManager *block.Manager
 	dalc         da.DataAvailabilityLayerClient
-	sequencer    sequencer.Sequencer
+	sequencer    aggregation.Aggregation
 
 	TxIndexer      txindex.TxIndexer
 	BlockIndexer   indexer.BlockIndexer
@@ -144,12 +144,12 @@ func newFullNode(
 		return nil, fmt.Errorf("data availability layer client initialization error: %w", err)
 	}
 
-	var aggregator sequencer.Sequencer
+	var aggregator aggregation.Aggregation
 	switch conf.AggregatorScheme {
 	case "centralized":
-		aggregator, err = sequencer.NewCentralizedSequencer(genesis)
+		aggregator, err = aggregation.NewCentralizedAggregation(genesis)
 	default:
-		aggregator, err = sequencer.NewMockSequencer(nil)
+		aggregator, err = aggregation.NewMockAggregation(nil)
 	}
 	if err != nil {
 		return nil, err
