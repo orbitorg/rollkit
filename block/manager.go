@@ -372,44 +372,46 @@ func (m *Manager) trySyncNextBlock(ctx context.Context, daHeight uint64) error {
 		commit = &b.SignedHeader.Commit
 	}
 
-	if b != nil && commit != nil {
-		bHeight := uint64(b.Height())
-		m.logger.Info("Syncing block", "height", bHeight)
-		newState, responses, err := m.applyBlock(ctx, b)
-		if err != nil {
-			return fmt.Errorf("failed to ApplyBlock: %w", err)
-		}
-		err = m.store.SaveBlock(b, commit)
-		if err != nil {
-			return fmt.Errorf("failed to save block: %w", err)
-		}
-		_, _, err = m.executor.Commit(ctx, newState, b, responses)
-		if err != nil {
-			return fmt.Errorf("failed to Commit: %w", err)
-		}
-
-		err = m.store.SaveBlockResponses(uint64(bHeight), responses)
-		if err != nil {
-			return fmt.Errorf("failed to save block responses: %w", err)
-		}
-
-		// SaveValidators commits the DB tx
-		err = m.saveValidatorsToStore(bHeight)
-		if err != nil {
-			return err
-		}
-
-		m.store.SetHeight(bHeight)
-
-		if daHeight > newState.DAHeight {
-			newState.DAHeight = daHeight
-		}
-		err = m.updateState(newState)
-		if err != nil {
-			m.logger.Error("failed to save updated state", "error", err)
-		}
-		m.blockCache.deleteBlock(currentHeight + 1)
+	if b == nil || commit == nil {
+		return nil
 	}
+
+	bHeight := uint64(b.Height())
+	m.logger.Info("Syncing block", "height", bHeight)
+	newState, responses, err := m.applyBlock(ctx, b)
+	if err != nil {
+		return fmt.Errorf("failed to ApplyBlock: %w", err)
+	}
+	err = m.store.SaveBlock(b, commit)
+	if err != nil {
+		return fmt.Errorf("failed to save block: %w", err)
+	}
+	_, _, err = m.executor.Commit(ctx, newState, b, responses)
+	if err != nil {
+		return fmt.Errorf("failed to Commit: %w", err)
+	}
+
+	err = m.store.SaveBlockResponses(uint64(bHeight), responses)
+	if err != nil {
+		return fmt.Errorf("failed to save block responses: %w", err)
+	}
+
+	// SaveValidators commits the DB tx
+	err = m.saveValidatorsToStore(bHeight)
+	if err != nil {
+		return err
+	}
+
+	m.store.SetHeight(bHeight)
+
+	if daHeight > newState.DAHeight {
+		newState.DAHeight = daHeight
+	}
+	err = m.updateState(newState)
+	if err != nil {
+		m.logger.Error("failed to save updated state", "error", err)
+	}
+	m.blockCache.deleteBlock(currentHeight + 1)
 
 	return nil
 }

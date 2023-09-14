@@ -5,7 +5,7 @@ import (
 )
 
 const (
-	Ok = iota
+	Ok uint = iota
 	Junk
 	ConsensusFault
 )
