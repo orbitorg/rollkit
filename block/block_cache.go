@@ -7,7 +7,7 @@ import (
 )
 
 type BlockCache struct {
-	blocks            map[uint64]*types.Block
+	blocks            map[uint64][]*types.Block
 	hashes            map[string]bool
 	hardConfirmations map[string]bool
 	mtx               *sync.RWMutex
@@ -15,24 +15,41 @@ type BlockCache struct {
 
 func NewBlockCache() *BlockCache {
 	return &BlockCache{
-		blocks:            make(map[uint64]*types.Block),
+		blocks:            make(map[uint64][]*types.Block),
 		hashes:            make(map[string]bool),
 		hardConfirmations: make(map[string]bool),
 		mtx:               new(sync.RWMutex),
 	}
 }
 
-func (bc *BlockCache) getBlock(height uint64) (*types.Block, bool) {
+func (bc *BlockCache) getFirstBlock(height uint64) (*types.Block, bool) {
 	bc.mtx.Lock()
 	defer bc.mtx.Unlock()
-	block, ok := bc.blocks[height]
-	return block, ok
+	blocks, ok := bc.blocks[height]
+	if !ok || len(blocks) == 0 {
+		return nil, false
+	}
+	return blocks[0], true
 }
 
-func (bc *BlockCache) setBlock(height uint64, block *types.Block) {
+func (bc *BlockCache) getBlocks(height uint64) ([]*types.Block, bool) {
 	bc.mtx.Lock()
 	defer bc.mtx.Unlock()
-	bc.blocks[height] = block
+	blocks, ok := bc.blocks[height]
+	if !ok || len(blocks) == 0 {
+		return []*types.Block{}, false
+	}
+	return blocks, true
+}
+
+func (bc *BlockCache) addBlock(height uint64, block *types.Block) {
+	bc.mtx.Lock()
+	defer bc.mtx.Unlock()
+	_, keyExists := bc.blocks[height]
+	if !keyExists {
+		bc.blocks[height] = []*types.Block{}
+	}
+	bc.blocks[height] = append(bc.blocks[height], block)
 }
 
 func (bc *BlockCache) deleteBlock(height uint64) {

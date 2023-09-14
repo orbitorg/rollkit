@@ -19,6 +19,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"go.uber.org/multierr"
 
+	"github.com/rollkit/rollkit/aggregation"
 	"github.com/rollkit/rollkit/config"
 	"github.com/rollkit/rollkit/da"
 	"github.com/rollkit/rollkit/log"
@@ -64,7 +65,8 @@ type Manager struct {
 
 	proposerKey crypto.PrivKey
 
-	executor *state.BlockExecutor
+	aggregation aggregation.Aggregation
+	executor    *state.BlockExecutor
 
 	dalc      da.DataAvailabilityLayerClient
 	retriever da.BlockRetriever
@@ -117,6 +119,7 @@ func NewManager(
 	logger log.Logger,
 	doneBuildingCh chan struct{},
 	blockStore *goheaderstore.Store[*types.Block],
+	aggregation aggregation.Aggregation,
 ) (*Manager, error) {
 	s, err := getInitialState(store, genesis)
 	if err != nil {
@@ -167,6 +170,7 @@ func NewManager(
 		genesis:     genesis,
 		lastState:   s,
 		store:       store,
+		aggregation: aggregation,
 		executor:    exec,
 		dalc:        dalc,
 		retriever:   dalc.(da.BlockRetriever), // TODO(tzdybal): do it in more gentle way (after MVP)
@@ -318,7 +322,7 @@ func (m *Manager) SyncLoop(ctx context.Context, cancel context.CancelFunc) {
 				m.logger.Debug("block already seen", "height", blockHeight, "block hash", blockHash)
 				continue
 			}
-			m.blockCache.setBlock(blockHeight, block)
+			m.blockCache.addBlock(blockHeight, block)
 
 			m.sendNonBlockingSignalToBlockStoreCh()
 			m.sendNonBlockingSignalToRetrieveCh()
@@ -358,7 +362,7 @@ func (m *Manager) trySyncNextBlock(ctx context.Context, daHeight uint64) error {
 	var commit *types.Commit
 	currentHeight := m.store.Height() // TODO(tzdybal): maybe store a copy in memory
 
-	b, ok := m.blockCache.getBlock(currentHeight + 1)
+	b, ok := m.blockCache.getFirstBlock(currentHeight + 1)
 	if !ok {
 		return nil
 	}
@@ -487,7 +491,20 @@ func (m *Manager) processNextDABlock(ctx context.Context) error {
 				return nil
 			}
 			m.logger.Debug("retrieved potential blocks", "n", len(blockResp.Blocks), "daHeight", daHeight)
+		BlockLoop:
 			for _, block := range blockResp.Blocks {
+				height := block.SignedHeader.Height()
+				oldBlocks, _ := m.blockCache.getBlocks(height)
+				safetyResult := m.aggregation.CheckSafetyInvariant(block, oldBlocks)
+				switch safetyResult {
+				case aggregation.Junk:
+					continue BlockLoop
+				case aggregation.ConsensusFault:
+					return fmt.Errorf("halt")
+				case aggregation.Ok:
+				default:
+					return fmt.Errorf("invalid aggregation scheme")
+				}
 				blockHash := block.Hash().String()
 				m.blockCache.setHardConfirmed(blockHash)
 				m.logger.Info("block marked as hard confirmed", "blockHeight", block.Height(), "blockHash", blockHash)
