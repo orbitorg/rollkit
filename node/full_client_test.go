@@ -75,7 +75,8 @@ func getRPC(t *testing.T) (*mocks.Application, *FullClient) {
 	node, err := newFullNode(
 		ctx,
 		config.NodeConfig{
-			DAAddress: MockServerAddr,
+			DAAddress:   MockServerAddr,
+			DANamespace: "deadbeef",
 		},
 		key,
 		signingKey,
@@ -177,7 +178,7 @@ func TestGenesisChunked(t *testing.T) {
 	signingKey, _, _ := crypto.GenerateEd25519Key(crand.Reader)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	n, _ := newFullNode(ctx, config.NodeConfig{DAAddress: MockServerAddr}, privKey, signingKey, proxy.NewLocalClientCreator(mockApp), genDoc, DefaultMetricsProvider(cmconfig.DefaultInstrumentationConfig()), test.NewFileLogger(t))
+	n, _ := newFullNode(ctx, config.NodeConfig{DAAddress: MockServerAddr, DANamespace: MockNamespace}, privKey, signingKey, proxy.NewLocalClientCreator(mockApp), genDoc, DefaultMetricsProvider(cmconfig.DefaultInstrumentationConfig()), test.NewFileLogger(t))
 
 	rpc := NewFullClient(n)
 
