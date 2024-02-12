@@ -76,7 +76,7 @@ func getRPC(t *testing.T) (*mocks.Application, *FullClient) {
 		ctx,
 		config.NodeConfig{
 			DAAddress:   MockServerAddr,
-			DANamespace: "deadbeef",
+			DANamespace: MockNamespace,
 		},
 		key,
 		signingKey,
@@ -577,8 +577,9 @@ func TestTx(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	node, err := newFullNode(ctx, config.NodeConfig{
-		DAAddress:  MockServerAddr,
-		Aggregator: true,
+		DAAddress:   MockServerAddr,
+		DANamespace: MockNamespace,
+		Aggregator:  true,
 		BlockManagerConfig: config.BlockManagerConfig{
 			BlockTime: 1 * time.Second, // blocks must be at least 1 sec apart for adjacent headers to get verified correctly
 		}},
@@ -848,8 +849,9 @@ func TestMempool2Nodes(t *testing.T) {
 	defer cancel()
 	// make node1 an aggregator, so that node2 can start gracefully
 	node1, err := newFullNode(ctx, config.NodeConfig{
-		DAAddress:  MockServerAddr,
-		Aggregator: true,
+		DAAddress:   MockServerAddr,
+		DANamespace: MockNamespace,
+		Aggregator:  true,
 		P2P: config.P2PConfig{
 			ListenAddress: "/ip4/127.0.0.1/tcp/9001",
 		},
@@ -859,7 +861,8 @@ func TestMempool2Nodes(t *testing.T) {
 	require.NotNil(node1)
 
 	node2, err := newFullNode(ctx, config.NodeConfig{
-		DAAddress: MockServerAddr,
+		DAAddress:   MockServerAddr,
+		DANamespace: MockNamespace,
 		P2P: config.P2PConfig{
 			ListenAddress: "/ip4/127.0.0.1/tcp/9002",
 			Seeds:         "/ip4/127.0.0.1/tcp/9001/p2p/" + id1.Loggable()["peerID"].(string),
@@ -1038,8 +1041,9 @@ func TestFutureGenesisTime(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	node, err := newFullNode(ctx, config.NodeConfig{
-		DAAddress:  MockServerAddr,
-		Aggregator: true,
+		DAAddress:   MockServerAddr,
+		DANamespace: MockNamespace,
+		Aggregator:  true,
 		BlockManagerConfig: config.BlockManagerConfig{
 			BlockTime: 200 * time.Millisecond,
 		}},

@@ -59,7 +59,7 @@ func TestAggregatorMode(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	node, err := newFullNode(ctx, config.NodeConfig{DAAddress: MockServerAddr, Aggregator: true, BlockManagerConfig: blockManagerConfig}, key, signingKey, proxy.NewLocalClientCreator(app), genesisDoc, DefaultMetricsProvider(cmconfig.DefaultInstrumentationConfig()), log.TestingLogger())
+	node, err := newFullNode(ctx, config.NodeConfig{DAAddress: MockServerAddr, DANamespace: MockNamespace, Aggregator: true, BlockManagerConfig: blockManagerConfig}, key, signingKey, proxy.NewLocalClientCreator(app), genesisDoc, DefaultMetricsProvider(cmconfig.DefaultInstrumentationConfig()), log.TestingLogger())
 	require.NoError(err)
 	require.NotNil(node)
 
@@ -184,6 +184,7 @@ func TestLazyAggregator(t *testing.T) {
 	defer cancel()
 	node, err := NewNode(ctx, config.NodeConfig{
 		DAAddress:          MockServerAddr,
+		DANamespace:        MockNamespace,
 		Aggregator:         true,
 		BlockManagerConfig: blockManagerConfig,
 		LazyAggregator:     true,
@@ -706,6 +707,7 @@ func createNode(ctx context.Context, n int, aggregator bool, isLight bool, keys 
 		ctx,
 		config.NodeConfig{
 			DAAddress:          MockServerAddr,
+			DANamespace:        MockNamespace,
 			P2P:                p2pConfig,
 			Aggregator:         aggregator,
 			BlockManagerConfig: bmConfig,
