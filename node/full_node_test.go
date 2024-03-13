@@ -196,6 +196,7 @@ func TestPendingBlocks(t *testing.T) {
 		DA:        mockDA,
 		Namespace: goDA.Namespace(MockNamespace),
 		GasPrice:  1234,
+		Logger:    test.NewLogger(t),
 	}
 	dbPath, err := os.MkdirTemp("", "testdb")
 	require.NoError(t, err)
@@ -208,8 +209,8 @@ func TestPendingBlocks(t *testing.T) {
 	assert.NoError(t, err)
 
 	const (
-		firstRunBlocks  = 10
-		secondRunBlocks = 5
+		firstRunBlocks  = 100
+		secondRunBlocks = 50
 	)
 
 	err = waitForAtLeastNBlocks(node, firstRunBlocks, Store)
@@ -228,13 +229,15 @@ func TestPendingBlocks(t *testing.T) {
 	// node will be stopped after producing at least firstRunBlocks blocks
 	// restarted node should submit to DA blocks from first and second run (more than firstRunBlocks)
 	allBlobs := make([][]byte, 0, firstRunBlocks+secondRunBlocks)
+	height := 1
 	mockDA.On("Submit", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		func(ctx context.Context, blobs [][]byte, gasPrice float64, namespace []byte) ([][]byte, error) {
 			hashes := make([][]byte, len(blobs))
 			for i, blob := range blobs {
 				sha := sha256.Sum256(blob)
-				hashes[i] = sha[:]
+				hashes[i] = append([]byte(strconv.Itoa(height)), sha[:]...)
 			}
+			height++
 			allBlobs = append(allBlobs, blobs...)
 			return hashes, nil
 		})

@@ -3,6 +3,9 @@ package block
 import (
 	"bytes"
 	"context"
+	"github.com/cometbft/cometbft/crypto/ed25519"
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/rollkit/rollkit/test/mocks"
 	"os"
 	"strconv"
 	"testing"
@@ -267,6 +270,53 @@ func TestSubmitBlocksToDA(t *testing.T) {
 			lshInKV, err := strconv.ParseUint(string(raw), 10, 64)
 			require.NoError(err)
 			assert.Equal(m.store.Height(), lshInKV+uint64(tc.expectedPendingBlocksLength))
+		})
+	}
+}
+
+func TestMaxPendingBlocks(t *testing.T) {
+	cases := []struct {
+		name             string
+		maxPendingBlocks uint64
+		requireError     bool
+	}{
+		{
+			name:             "no limit",
+			maxPendingBlocks: 0,
+			requireError:     false,
+		},
+	}
+
+	m := getManager(t, mocks.NewDA(t))
+	//privKey, _, err := crypto.GenerateKeyPair(crypto.Ed25519, ed25519.PrivateKeySize)
+	privKey := ed25519.GenPrivKey()
+
+	proposerKey, err := crypto.UnmarshalEd25519PrivateKey(privKey.Bytes())
+	require.NoError(t, err)
+
+	m.proposerKey = proposerKey
+	m.genesis = &cmtypes.GenesisDoc{
+		Validators: []cmtypes.GenesisValidator{
+			{
+				Address: privKey.PubKey().Address(),
+				PubKey:  privKey.PubKey(),
+				Power:   123,
+				Name:    "test",
+			},
+		},
+	}
+
+	m.pendingBlocks = newPendingBlocks(t)
+	m.store = m.pendingBlocks.store
+	fillWithBlocks(context.TODO(), t, m.pendingBlocks)
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m.conf.MaxPendingBlocks = tc.maxPendingBlocks
+
+			err := m.publishBlock(context.TODO())
+
+			require.Equal(t, tc.requireError, err != nil, err)
 		})
 	}
 }
