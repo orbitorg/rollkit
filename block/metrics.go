@@ -17,7 +17,6 @@ const (
 type Metrics struct {
 	// Height of the chain.
 	Height metrics.Gauge
-
 	// Number of transactions.
 	NumTxs metrics.Gauge
 	// Size of the block.
@@ -26,6 +25,10 @@ type Metrics struct {
 	TotalTxs metrics.Gauge
 	// The latest block height.
 	CommittedHeight metrics.Gauge `metrics_name:"latest_block_height"`
+	// DA submission errors
+	DASubmissionErrors metrics.Gauge
+	// The latest DA inclusion block height.
+	DAInclusionHeight metrics.Gauge
 }
 
 // PrometheusMetrics returns Metrics build using Prometheus client library.
@@ -67,16 +70,30 @@ func PrometheusMetrics(namespace string, labelsAndValues ...string) *Metrics {
 			Name:      "latest_block_height",
 			Help:      "The latest block height.",
 		}, labels).With(labelsAndValues...),
+		DASubmissionErrors: prometheus.NewGaugeFrom(stdprometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: MetricsSubsystem,
+			Name:      "da_submission_errors_total",
+			Help:      "Total number of DA submission errors.",
+		}, labels).With(labelsAndValues...),
+		DAInclusionHeight: prometheus.NewGaugeFrom(stdprometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: MetricsSubsystem,
+			Name:      "latest_da_inclusion_height",
+			Help:      "The latest DA inclusion block height",
+		}, labels).With(labelsAndValues...),
 	}
 }
 
 // NopMetrics returns no-op Metrics.
 func NopMetrics() *Metrics {
 	return &Metrics{
-		Height:          discard.NewGauge(),
-		NumTxs:          discard.NewGauge(),
-		BlockSizeBytes:  discard.NewGauge(),
-		TotalTxs:        discard.NewGauge(),
-		CommittedHeight: discard.NewGauge(),
+		Height:             discard.NewGauge(),
+		NumTxs:             discard.NewGauge(),
+		BlockSizeBytes:     discard.NewGauge(),
+		TotalTxs:           discard.NewGauge(),
+		CommittedHeight:    discard.NewGauge(),
+		DASubmissionErrors: discard.NewGauge(),
+		DAInclusionHeight:  discard.NewGauge(),
 	}
 }

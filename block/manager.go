@@ -927,8 +927,8 @@ func (m *Manager) submitBlocksToDA(ctx context.Context) error {
 				}
 			}
 			m.logger.Debug("resetting DA layer submission options", "backoff", backoff, "gasPrice", gasPrice, "maxBlobSize", maxBlobSize)
+			m.metrics.DAInclusionHeight.Set(float64(res.DAHeight))
 		case da.StatusNotIncludedInBlock, da.StatusAlreadyInMempool:
-			m.logger.Error("DA layer submission failed", "error", res.Message, "attempt", attempt)
 			backoff = m.conf.DABlockTime * time.Duration(m.conf.DAMempoolTTL)
 			if m.dalc.GasMultiplier > 0 && gasPrice != -1 {
 				gasPrice = gasPrice * m.dalc.GasMultiplier
@@ -937,12 +937,10 @@ func (m *Manager) submitBlocksToDA(ctx context.Context) error {
 			time.Sleep(backoff)
 			backoff = m.exponentialBackoff(backoff)
 		case da.StatusTooBig:
-			m.logger.Error("DA layer submission failed", "error", res.Message, "attempt", attempt)
 			maxBlobSize = maxBlobSize / 4
-			time.Sleep(backoff)
-			backoff = m.exponentialBackoff(backoff)
 		default:
 			m.logger.Error("DA layer submission failed", "error", res.Message, "attempt", attempt)
+			m.metrics.DASubmissionErrors.Add(float64(1))
 			time.Sleep(backoff)
 			backoff = m.exponentialBackoff(backoff)
 		}
