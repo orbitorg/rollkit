@@ -26,6 +26,8 @@ type Metrics struct {
 	TotalTxs metrics.Gauge
 	// The latest block height.
 	CommittedHeight metrics.Gauge `metrics_name:"latest_block_height"`
+	// The latest DA inclusion block height.
+	DAInclusionHeight metrics.Gauge `metrics_name:"latest_da_inclusion_height"`
 }
 
 // PrometheusMetrics returns Metrics build using Prometheus client library.
@@ -66,6 +68,12 @@ func PrometheusMetrics(namespace string, labelsAndValues ...string) *Metrics {
 			Subsystem: MetricsSubsystem,
 			Name:      "latest_block_height",
 			Help:      "The latest block height.",
+		}, labels).With(labelsAndValues...),
+		DAInclusionHeight: prometheus.NewGaugeFrom(stdprometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: MetricsSubsystem,
+			Name:      "latest_da_inclusion_height",
+			Help:      "The latest DA inclusion block height",
 		}, labels).With(labelsAndValues...),
 	}
 }

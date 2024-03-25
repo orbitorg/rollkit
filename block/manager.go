@@ -52,6 +52,13 @@ const channelLength = 100
 // Applies to the blockInCh, 10000 is a large enough number for blocks per DA block.
 const blockInChLength = 10000
 
+// DA Submission status events
+const (
+	DASubmissionStatusUknown = "unknown"
+	DASubmissionSucceeded    = "submitted"
+	DASubmissionFailed       = "failed"
+)
+
 // initialBackoff defines initial value for block submission backoff
 var initialBackoff = 100 * time.Millisecond
 
@@ -937,6 +944,7 @@ func (m *Manager) submitBlocksToDA(ctx context.Context) error {
 				}
 			}
 			m.logger.Debug("resetting DA layer submission options", "backoff", backoff, "gasPrice", gasPrice, "maxBlobSize", maxBlobSize)
+			m.metrics.DAInclusionHeight.Set(float64(res.DAHeight))
 		case da.StatusNotIncludedInBlock, da.StatusAlreadyInMempool:
 			backoff = m.conf.DABlockTime * time.Duration(m.conf.DAMempoolTTL)
 			if m.dalc.GasMultiplier > 0 && gasPrice != -1 {
@@ -955,7 +963,6 @@ func (m *Manager) submitBlocksToDA(ctx context.Context) error {
 		}
 		// Common handling for all non-success cases
 		if res.Code != da.StatusSuccess {
-			m.alerter.RegisterAlert(types.AlertIDBlockNotSubmitted, daSubmissionFailureLog, res.Message, types.SeverityError)
 			m.logger.Error(fmt.Sprintf("%v; attempt: %v; error: %v", daSubmissionFailureLog, attempt, res.Message))
 		}
 		attempt += 1
