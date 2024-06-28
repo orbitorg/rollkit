@@ -12,9 +12,9 @@ import (
 	"time"
 
 	abci "github.com/cometbft/cometbft/abci/types"
+	cmproto "github.com/cometbft/cometbft/api/cometbft/types/v1"
 	cmconfig "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/crypto/ed25519"
-	cmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/cometbft/cometbft/proxy"
 	cmtypes "github.com/cometbft/cometbft/types"
 
@@ -31,7 +31,6 @@ import (
 	"github.com/rollkit/rollkit/block"
 	"github.com/rollkit/rollkit/config"
 	"github.com/rollkit/rollkit/da"
-	"github.com/rollkit/rollkit/mempool"
 	test "github.com/rollkit/rollkit/test/log"
 	"github.com/rollkit/rollkit/test/mocks"
 	"github.com/rollkit/rollkit/types"
@@ -278,7 +277,7 @@ func TestVoteExtension(t *testing.T) {
 	t.Run("TestPrepareProposalVoteExtChecker", func(t *testing.T) {
 		app, node, signingKey := createNodeAndApp(ctx, voteExtensionEnableHeight, t)
 
-		prepareProposalVoteExtChecker := func(_ context.Context, req *abci.RequestPrepareProposal) (*abci.ResponsePrepareProposal, error) {
+		prepareProposalVoteExtChecker := func(_ context.Context, req *abci.PrepareProposalRequest) (*abci.PrepareProposalResponse, error) {
 			if req.Height <= voteExtensionEnableHeight {
 				require.Empty(req.LocalLastCommit.Votes)
 			} else {
@@ -295,18 +294,18 @@ func TestVoteExtension(t *testing.T) {
 				require.NoError(err)
 				require.True(ok)
 			}
-			return &abci.ResponsePrepareProposal{
+			return &abci.PrepareProposalResponse{
 				Txs: req.Txs,
 			}, nil
 		}
-		voteExtension := func(_ context.Context, req *abci.RequestExtendVote) (*abci.ResponseExtendVote, error) {
-			return &abci.ResponseExtendVote{
+		voteExtension := func(_ context.Context, req *abci.ExtendVoteRequest) (*abci.ExtendVoteResponse, error) {
+			return &abci.ExtendVoteResponse{
 				VoteExtension: []byte(fmt.Sprintf(expectedExtension, req.Height)),
 			}, nil
 		}
-		app.On("Commit", mock.Anything, mock.Anything).Return(&abci.ResponseCommit{}, nil)
+		app.On("Commit", mock.Anything, mock.Anything).Return(&abci.CommitResponse{}, nil)
 		app.On("PrepareProposal", mock.Anything, mock.Anything).Return(prepareProposalVoteExtChecker)
-		app.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_ACCEPT}, nil)
+		app.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ProcessProposalResponse{Status: abci.PROCESS_PROPOSAL_STATUS_ACCEPT}, nil)
 		app.On("FinalizeBlock", mock.Anything, mock.Anything).Return(finalizeBlockResponse)
 		app.On("ExtendVote", mock.Anything, mock.Anything).Return(voteExtension)
 		require.NotNil(app)
@@ -325,16 +324,16 @@ func TestVoteExtension(t *testing.T) {
 		// Create a channel to signal from extendVoteFailure
 		extendVoteFailureChan := make(chan struct{})
 
-		invalidVoteExtension := func(_ context.Context, req *abci.RequestExtendVote) (*abci.ResponseExtendVote, error) {
+		invalidVoteExtension := func(_ context.Context, req *abci.ExtendVoteRequest) (*abci.ExtendVoteResponse, error) {
 			extendVoteFailureChan <- struct{}{}
 			return nil, fmt.Errorf("ExtendVote failed")
 		}
 		app.On("ExtendVote", mock.Anything, mock.Anything).Return(invalidVoteExtension)
 
 		// Ensure all necessary methods are mocked
-		app.On("Commit", mock.Anything, mock.Anything).Return(&abci.ResponseCommit{}, nil)
-		app.On("PrepareProposal", mock.Anything, mock.Anything).Return(&abci.ResponsePrepareProposal{Txs: nil}, nil)
-		app.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_ACCEPT}, nil)
+		app.On("Commit", mock.Anything, mock.Anything).Return(&abci.CommitResponse{}, nil)
+		app.On("PrepareProposal", mock.Anything, mock.Anything).Return(&abci.PrepareProposalResponse{Txs: nil}, nil)
+		app.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ProcessProposalResponse{Status: abci.PROCESS_PROPOSAL_STATUS_ACCEPT}, nil)
 		app.On("FinalizeBlock", mock.Anything, mock.Anything).Return(finalizeBlockResponse)
 		require.NotNil(app)
 
@@ -376,7 +375,7 @@ func createNodeAndApp(ctx context.Context, voteExtensionEnableHeight int64, t *t
 	require := require.New(t)
 
 	app := &mocks.Application{}
-	app.On("InitChain", mock.Anything, mock.Anything).Return(&abci.ResponseInitChain{}, nil)
+	app.On("InitChain", mock.Anything, mock.Anything).Return(&abci.InitChainResponse{}, nil)
 	node, signingKey := createAggregatorWithApp(ctx, app, voteExtensionEnableHeight, t)
 	require.NotNil(node)
 	require.NotNil(signingKey)
@@ -432,7 +431,7 @@ func createAggregatorWithApp(ctx context.Context, app abci.Application, voteExte
 		Evidence:  cmtypes.DefaultEvidenceParams(),
 		Validator: cmtypes.DefaultValidatorParams(),
 		Version:   cmtypes.DefaultVersionParams(),
-		ABCI:      cmtypes.ABCIParams{VoteExtensionsEnableHeight: voteExtensionEnableHeight},
+		Feature:   cmtypes.FeatureParams{VoteExtensionsEnableHeight: voteExtensionEnableHeight},
 	}
 	signingKey, err := types.PrivKeyToSigningKey(genesisValidatorKey)
 	require.NoError(t, err)
@@ -465,12 +464,12 @@ func createAggregatorWithApp(ctx context.Context, app abci.Application, voteExte
 // setupMockApplication initializes a mock application
 func setupMockApplication() *mocks.Application {
 	app := &mocks.Application{}
-	app.On("InitChain", mock.Anything, mock.Anything).Return(&abci.ResponseInitChain{}, nil)
-	app.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.ResponseCheckTx{}, nil)
+	app.On("InitChain", mock.Anything, mock.Anything).Return(&abci.InitChainResponse{}, nil)
+	app.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.CheckTxResponse{}, nil)
 	app.On("PrepareProposal", mock.Anything, mock.Anything).Return(prepareProposalResponse).Maybe()
-	app.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_ACCEPT}, nil)
-	app.On("FinalizeBlock", mock.Anything, mock.Anything).Return(&abci.ResponseFinalizeBlock{AppHash: []byte{1, 2, 3, 4}}, nil)
-	app.On("Commit", mock.Anything, mock.Anything).Return(&abci.ResponseCommit{}, nil)
+	app.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ProcessProposalResponse{Status: abci.PROCESS_PROPOSAL_STATUS_ACCEPT}, nil)
+	app.On("FinalizeBlock", mock.Anything, mock.Anything).Return(&abci.FinalizeBlockResponse{AppHash: []byte{1, 2, 3, 4}}, nil)
+	app.On("Commit", mock.Anything, mock.Anything).Return(&abci.CommitResponse{}, nil)
 	return app
 }
 
@@ -496,9 +495,7 @@ func getPeerID(t *testing.T) peer.ID {
 func verifyTransactions(node *FullNode, peerID peer.ID, t *testing.T) {
 	transactions := []string{"tx1", "tx2", "tx3", "tx4"}
 	for _, tx := range transactions {
-		err := node.Mempool.CheckTx([]byte(tx), func(r *abci.ResponseCheckTx) {}, mempool.TxInfo{
-			SenderID: node.mempoolIDs.GetForPeer(peerID),
-		})
+		_, err := node.Mempool.CheckTx([]byte(tx), "")
 		assert.NoError(t, err)
 	}
 

@@ -54,10 +54,10 @@ func ConsensusParamsValidateBasic(params cmtypes.ConsensusParams) error {
 			params.Block.MaxGas)
 	}
 
-	if params.ABCI.VoteExtensionsEnableHeight < 0 {
+	if params.Feature.VoteExtensionsEnableHeight < 0 {
 		return fmt.Errorf("%w: Got: %d",
 			ErrVoteExtensionsEnableHeightNegative,
-			params.ABCI.VoteExtensionsEnableHeight)
+			params.Feature.VoteExtensionsEnableHeight)
 	}
 
 	if len(params.Validator.PubKeyTypes) == 0 {

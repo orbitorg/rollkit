@@ -1,7 +1,7 @@
 syntax = "proto3";
 package rollkit;
 
-import "tendermint/types/validator.proto";
+import "cometbft/types/v1/validator.proto";
 
 option go_package = "github.com/rollkit/rollkit/types/pb/rollkit";
 
@@ -65,7 +65,7 @@ message Commit {
 message SignedHeader {
   Header header = 1;
   Commit commit = 2;
-  tendermint.types.ValidatorSet validators = 3;
+  cometbft.types.v1.ValidatorSet validators = 3;
 }
 
 message Data {

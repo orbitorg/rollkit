@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	abcitypes "github.com/cometbft/cometbft/abci/types"
-	cmproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	cmproto "github.com/cometbft/cometbft/api/cometbft/types/v1"
 	ds "github.com/ipfs/go-datastore"
 
 	"github.com/stretchr/testify/assert"
@@ -178,7 +178,7 @@ func TestBlockResponses(t *testing.T) {
 	kv, _ := NewDefaultInMemoryKVStore()
 	s := New(kv)
 
-	expected := &abcitypes.ResponseFinalizeBlock{
+	expected := &abcitypes.FinalizeBlockResponse{
 		Events: []abcitypes.Event{{
 			Type: "test",
 			Attributes: []abcitypes.EventAttribute{{

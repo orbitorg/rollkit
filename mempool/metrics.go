@@ -42,6 +42,14 @@ type Metrics struct {
 
 	// Number of times transactions are rechecked in the mempool.
 	RecheckTimes metrics.Counter
+
+	// Number of times transactions were received more than once.
+	// metrics:Number of duplicate transaction reception.
+	AlreadyReceivedTxs metrics.Counter
+
+	// Number of connections being actively used for gossiping transactions
+	// (experimental feature).
+	ActiveOutboundConnections metrics.Gauge
 }
 
 // PrometheusMetrics returns Metrics build using Prometheus client library.
@@ -102,18 +110,32 @@ func PrometheusMetrics(namespace string, labelsAndValues ...string) *Metrics {
 			Name:      "recheck_times",
 			Help:      "Number of times transactions are rechecked in the mempool.",
 		}, labels).With(labelsAndValues...),
+		AlreadyReceivedTxs: prometheus.NewCounterFrom(stdprometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: MetricsSubsystem,
+			Name:      "already_received_txs",
+			Help:      "Number of duplicate transaction reception.",
+		}, labels).With(labelsAndValues...),
+		ActiveOutboundConnections: prometheus.NewGaugeFrom(stdprometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: MetricsSubsystem,
+			Name:      "active_outbound_connections",
+			Help:      "Number of connections being actively used for gossiping transactions (experimental feature).",
+		}, labels).With(labelsAndValues...),
 	}
 }
 
 // NopMetrics returns no-op Metrics.
 func NopMetrics() *Metrics {
 	return &Metrics{
-		Size:         discard.NewGauge(),
-		SizeBytes:    discard.NewGauge(),
-		TxSizeBytes:  discard.NewHistogram(),
-		FailedTxs:    discard.NewCounter(),
-		RejectedTxs:  discard.NewCounter(),
-		EvictedTxs:   discard.NewCounter(),
-		RecheckTimes: discard.NewCounter(),
+		Size:                      discard.NewGauge(),
+		SizeBytes:                 discard.NewGauge(),
+		TxSizeBytes:               discard.NewHistogram(),
+		FailedTxs:                 discard.NewCounter(),
+		RejectedTxs:               discard.NewCounter(),
+		EvictedTxs:                discard.NewCounter(),
+		RecheckTimes:              discard.NewCounter(),
+		AlreadyReceivedTxs:        discard.NewCounter(),
+		ActiveOutboundConnections: discard.NewGauge(),
 	}
 }

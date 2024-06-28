@@ -3,11 +3,11 @@ package abci
 import (
 	cmbytes "github.com/cometbft/cometbft/libs/bytes"
 
-	cmproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	cmproto "github.com/cometbft/cometbft/api/cometbft/types/v1"
 
 	"testing"
 
-	cmversion "github.com/cometbft/cometbft/proto/tendermint/version"
+	cmversion "github.com/cometbft/cometbft/api/cometbft/version/v1"
 	cmtypes "github.com/cometbft/cometbft/types"
 
 	"github.com/rollkit/rollkit/types"

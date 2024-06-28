@@ -11,9 +11,9 @@ import (
 	"time"
 
 	abci "github.com/cometbft/cometbft/abci/types"
+	cmproto "github.com/cometbft/cometbft/api/cometbft/types/v1"
 	cmcrypto "github.com/cometbft/cometbft/crypto"
 	"github.com/cometbft/cometbft/crypto/merkle"
-	cmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/cometbft/cometbft/proxy"
 	cmtypes "github.com/cometbft/cometbft/types"
 	ds "github.com/ipfs/go-datastore"
@@ -958,8 +958,8 @@ func (m *Manager) processVoteExtension(ctx context.Context, block *types.Block, 
 }
 
 func (m *Manager) voteExtensionEnabled(newHeight uint64) bool {
-	enableHeight := m.lastState.ConsensusParams.Abci.VoteExtensionsEnableHeight
-	return m.lastState.ConsensusParams.Abci != nil && enableHeight != 0 && uint64(enableHeight) <= newHeight
+	enableHeight := m.lastState.ConsensusParams.Feature.VoteExtensionsEnableHeight.Value
+	return m.lastState.ConsensusParams.Feature != nil && enableHeight != 0 && uint64(enableHeight) <= newHeight
 }
 
 func (m *Manager) getExtendedCommit(ctx context.Context, height uint64) (abci.ExtendedCommitInfo, error) {
@@ -1131,13 +1131,13 @@ func (m *Manager) createBlock(height uint64, lastCommit *types.Commit, lastHeade
 	return m.executor.CreateBlock(height, lastCommit, extendedCommit, lastHeaderHash, m.lastState)
 }
 
-func (m *Manager) applyBlock(ctx context.Context, block *types.Block) (types.State, *abci.ResponseFinalizeBlock, error) {
+func (m *Manager) applyBlock(ctx context.Context, block *types.Block) (types.State, *abci.FinalizeBlockResponse, error) {
 	m.lastStateMtx.RLock()
 	defer m.lastStateMtx.RUnlock()
 	return m.executor.ApplyBlock(ctx, m.lastState, block)
 }
 
-func updateState(s *types.State, res *abci.ResponseInitChain) {
+func updateState(s *types.State, res *abci.InitChainResponse) {
 	// If the app did not return an app hash, we keep the one set from the genesis doc in
 	// the state. We don't set appHash since we don't want the genesis doc app hash
 	// recorded in the genesis block. We should probably just remove GenesisDoc.AppHash.

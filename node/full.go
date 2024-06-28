@@ -472,17 +472,8 @@ func (n *FullNode) newTxValidator(metrics *p2p.Metrics) p2p.GossipValidator {
 		}
 		metrics.PeerReceiveBytesTotal.With(labels...).Add(float64(len(msgBytes)))
 		metrics.MessageReceiveBytesTotal.With("message_type", "tx").Add(float64(len(msgBytes)))
-		checkTxResCh := make(chan *abci.ResponseCheckTx, 1)
-		err := n.Mempool.CheckTx(m.Data, func(resp *abci.ResponseCheckTx) {
-			select {
-			case <-n.ctx.Done():
-				return
-			case checkTxResCh <- resp:
-			}
-		}, mempool.TxInfo{
-			SenderID:    n.mempoolIDs.GetForPeer(m.From),
-			SenderP2PID: corep2p.ID(m.From),
-		})
+		checkTxResCh := make(chan *abci.CheckTxResponse, 1)
+		reqRes, err := n.Mempool.CheckTx(m.Data, corep2p.ID(m.From))
 		switch {
 		case errors.Is(err, mempool.ErrTxInCache):
 			return true
@@ -494,6 +485,16 @@ func (n *FullNode) newTxValidator(metrics *p2p.Metrics) p2p.GossipValidator {
 			return false
 		default:
 		}
+		go func() {
+			// Wait for a response. The ABCI client guarantees that it will eventually call
+			// reqRes.Done(), even in the case of error.
+			reqRes.Wait()
+			select {
+			case <-n.ctx.Done():
+			default:
+				checkTxResCh <- reqRes.Response.GetCheckTx()
+			}
+		}()
 		checkTxResp := <-checkTxResCh
 
 		return checkTxResp.Code == abci.CodeTypeOK

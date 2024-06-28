@@ -12,11 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	abci "github.com/cometbft/cometbft/abci/types"
+	cmproto "github.com/cometbft/cometbft/api/cometbft/types/v1"
 	cfg "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/pubsub/query"
-	cmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/cometbft/cometbft/proxy"
 	cmtypes "github.com/cometbft/cometbft/types"
 
@@ -25,8 +25,8 @@ import (
 	"github.com/rollkit/rollkit/types"
 )
 
-func prepareProposalResponse(_ context.Context, req *abci.RequestPrepareProposal) (*abci.ResponsePrepareProposal, error) {
-	return &abci.ResponsePrepareProposal{
+func prepareProposalResponse(_ context.Context, req *abci.PrepareProposalRequest) (*abci.PrepareProposalResponse, error) {
+	return &abci.PrepareProposalResponse{
 		Txs: req.Txs,
 	}, nil
 }
@@ -38,11 +38,11 @@ func doTestCreateBlock(t *testing.T) {
 	logger := log.TestingLogger()
 
 	app := &mocks.Application{}
-	app.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.ResponseCheckTx{}, nil)
+	app.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.CheckTxResponse{}, nil)
 	app.On("PrepareProposal", mock.Anything, mock.Anything).Return(prepareProposalResponse)
-	app.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_ACCEPT}, nil)
+	app.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ProcessProposalResponse{Status: abci.PROCESS_PROPOSAL_STATUS_ACCEPT}, nil)
 	fmt.Println("App On CheckTx")
-	client, err := proxy.NewLocalClientCreator(app).NewABCIClient()
+	client, err := proxy.NewLocalClientCreator(app).NewABCIConsensusClient()
 	fmt.Println("Created New Local Client")
 	require.NoError(err)
 	require.NotNil(client)
@@ -67,7 +67,7 @@ func doTestCreateBlock(t *testing.T) {
 	assert.Equal(uint64(1), block.Height())
 
 	// one small Tx
-	err = mpool.CheckTx([]byte{1, 2, 3, 4}, func(r *abci.ResponseCheckTx) {}, mempool.TxInfo{})
+	_, err = mpool.CheckTx([]byte{1, 2, 3, 4}, "")
 	require.NoError(err)
 	block, err = executor.CreateBlock(2, &types.Commit{}, abci.ExtendedCommitInfo{}, []byte{}, state)
 	require.NoError(err)
@@ -76,9 +76,9 @@ func doTestCreateBlock(t *testing.T) {
 	assert.Len(block.Data.Txs, 1)
 
 	// now there are 3 Txs, and only two can fit into single block
-	err = mpool.CheckTx([]byte{4, 5, 6, 7}, func(r *abci.ResponseCheckTx) {}, mempool.TxInfo{})
+	_, err = mpool.CheckTx([]byte{4, 5, 6, 7}, "")
 	require.NoError(err)
-	err = mpool.CheckTx(make([]byte, 100), func(r *abci.ResponseCheckTx) {}, mempool.TxInfo{})
+	_, err = mpool.CheckTx(make([]byte, 100), "")
 	require.NoError(err)
 	block, err = executor.CreateBlock(3, &types.Commit{}, abci.ExtendedCommitInfo{}, []byte{}, state)
 	require.NoError(err)
@@ -88,7 +88,7 @@ func doTestCreateBlock(t *testing.T) {
 	// limit max bytes
 	mpool.Flush()
 	executor.maxBytes = 10
-	err = mpool.CheckTx(make([]byte, 10), func(r *abci.ResponseCheckTx) {}, mempool.TxInfo{})
+	_, err = mpool.CheckTx(make([]byte, 10), "")
 	require.NoError(err)
 	block, err = executor.CreateBlock(4, &types.Commit{}, abci.ExtendedCommitInfo{}, []byte{}, state)
 	require.NoError(err)
@@ -111,12 +111,12 @@ func doTestApplyBlock(t *testing.T) {
 	require.NoError(err)
 
 	app := &mocks.Application{}
-	app.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.ResponseCheckTx{}, nil)
-	app.On("Commit", mock.Anything, mock.Anything).Return(&abci.ResponseCommit{}, nil)
+	app.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.CheckTxResponse{}, nil)
+	app.On("Commit", mock.Anything, mock.Anything).Return(&abci.CommitResponse{}, nil)
 	app.On("PrepareProposal", mock.Anything, mock.Anything).Return(prepareProposalResponse)
-	app.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_ACCEPT}, nil)
+	app.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ProcessProposalResponse{Status: abci.PROCESS_PROPOSAL_STATUS_ACCEPT}, nil)
 	app.On("FinalizeBlock", mock.Anything, mock.Anything).Return(
-		func(_ context.Context, req *abci.RequestFinalizeBlock) (*abci.ResponseFinalizeBlock, error) {
+		func(_ context.Context, req *abci.FinalizeBlockRequest) (*abci.FinalizeBlockResponse, error) {
 			txResults := make([]*abci.ExecTxResult, len(req.Txs))
 			for idx := range req.Txs {
 				txResults[idx] = &abci.ExecTxResult{
@@ -124,14 +124,14 @@ func doTestApplyBlock(t *testing.T) {
 				}
 			}
 
-			return &abci.ResponseFinalizeBlock{
+			return &abci.FinalizeBlockResponse{
 				TxResults: txResults,
 				AppHash:   mockAppHash,
 			}, nil
 		},
 	)
 
-	client, err := proxy.NewLocalClientCreator(app).NewABCIClient()
+	client, err := proxy.NewLocalClientCreator(app).NewABCIConsensusClient()
 	require.NoError(err)
 	require.NotNil(client)
 
@@ -169,7 +169,7 @@ func doTestApplyBlock(t *testing.T) {
 	chainID := "test"
 	executor := NewBlockExecutor(vKey.PubKey().Address().Bytes(), chainID, mpool, proxy.NewAppConnConsensus(client, proxy.NopMetrics()), eventBus, 100, logger, NopMetrics(), types.GetRandomBytes(32))
 
-	err = mpool.CheckTx([]byte{1, 2, 3, 4}, func(r *abci.ResponseCheckTx) {}, mempool.TxInfo{})
+	_, err = mpool.CheckTx([]byte{1, 2, 3, 4}, "")
 	require.NoError(err)
 	block, err := executor.CreateBlock(1, &types.Commit{Signatures: []types.Signature{types.Signature([]byte{1, 1, 1})}}, abci.ExtendedCommitInfo{}, []byte{}, state)
 	require.NoError(err)
@@ -197,10 +197,14 @@ func doTestApplyBlock(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(mockAppHash, appHash)
 
-	require.NoError(mpool.CheckTx([]byte{0, 1, 2, 3, 4}, func(r *abci.ResponseCheckTx) {}, mempool.TxInfo{}))
-	require.NoError(mpool.CheckTx([]byte{5, 6, 7, 8, 9}, func(r *abci.ResponseCheckTx) {}, mempool.TxInfo{}))
-	require.NoError(mpool.CheckTx([]byte{1, 2, 3, 4, 5}, func(r *abci.ResponseCheckTx) {}, mempool.TxInfo{}))
-	require.NoError(mpool.CheckTx(make([]byte, 90), func(r *abci.ResponseCheckTx) {}, mempool.TxInfo{}))
+	_, err = mpool.CheckTx([]byte{0, 1, 2, 3, 4}, "")
+	require.NoError(err)
+	_, err = mpool.CheckTx([]byte{5, 6, 7, 8, 9}, "")
+	require.NoError(err)
+	_, err = mpool.CheckTx([]byte{1, 2, 3, 4, 5}, "")
+	require.NoError(err)
+	_, err = mpool.CheckTx(make([]byte, 90), "")
+	require.NoError(err)
 	block, err = executor.CreateBlock(2, &types.Commit{Signatures: []types.Signature{types.Signature([]byte{1, 1, 1})}}, abci.ExtendedCommitInfo{}, []byte{}, newState)
 	require.NoError(err)
 	require.NotNil(block)
@@ -261,7 +265,7 @@ func TestApplyBlockWithFraudProofsDisabled(t *testing.T) {
 func TestUpdateStateConsensusParams(t *testing.T) {
 	logger := log.TestingLogger()
 	app := &mocks.Application{}
-	client, err := proxy.NewLocalClientCreator(app).NewABCIClient()
+	client, err := proxy.NewLocalClientCreator(app).NewABCIConsensusClient()
 	require.NoError(t, err)
 	require.NotNil(t, client)
 
@@ -284,7 +288,7 @@ func TestUpdateStateConsensusParams(t *testing.T) {
 			Version: &cmproto.VersionParams{
 				App: 1,
 			},
-			Abci: &cmproto.ABCIParams{},
+			Feature: &cmproto.FeatureParams{},
 		},
 	}
 
@@ -297,7 +301,7 @@ func TestUpdateStateConsensusParams(t *testing.T) {
 		}
 	}
 
-	resp := &abci.ResponseFinalizeBlock{
+	resp := &abci.FinalizeBlockResponse{
 		ConsensusParamUpdates: &cmproto.ConsensusParams{
 			Block: &cmproto.BlockParams{
 				MaxBytes: 200,

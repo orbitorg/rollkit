@@ -93,7 +93,7 @@ func TestConsensusParamsValidateBasic(t *testing.T) {
 						MaxBytes: 12345,
 						MaxGas:   6543234,
 					},
-					ABCI: cmtypes.ABCIParams{
+					Feature: cmtypes.FeatureParams{
 						VoteExtensionsEnableHeight: -1,
 					},
 				}

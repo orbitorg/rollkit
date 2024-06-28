@@ -13,7 +13,6 @@ import (
 	cometcli "github.com/cometbft/cometbft/libs/cli"
 	cometflags "github.com/cometbft/cometbft/libs/cli/flags"
 	cometlog "github.com/cometbft/cometbft/libs/log"
-	cometos "github.com/cometbft/cometbft/libs/os"
 	cometnode "github.com/cometbft/cometbft/node"
 	cometp2p "github.com/cometbft/cometbft/p2p"
 	cometprivval "github.com/cometbft/cometbft/privval"
@@ -21,6 +20,7 @@ import (
 	comettypes "github.com/cometbft/cometbft/types"
 	comettime "github.com/cometbft/cometbft/types/time"
 	"github.com/mitchellh/mapstructure"
+	cometos "github.com/rollkit/rollkit/libs/os"
 
 	proxy "github.com/rollkit/go-da/proxy/jsonrpc"
 	goDATest "github.com/rollkit/go-da/test"
@@ -135,7 +135,7 @@ func NewRunNodeCmd() *cobra.Command {
 				p2pKey,
 				signingKey,
 				cometproxy.DefaultClientCreator(config.ProxyApp, config.ABCI, nodeConfig.DBPath),
-				genDoc,
+				genDoc.GenesisDoc,
 				metrics,
 				logger,
 			)

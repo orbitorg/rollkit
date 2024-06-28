@@ -37,7 +37,7 @@ import (
 	cmtmath "github.com/cometbft/cometbft/libs/math"
 )
 
-var expectedInfo = &abci.ResponseInfo{
+var expectedInfo = &abci.InfoResponse{
 	Version:         "v0.0.1",
 	AppVersion:      1,
 	LastBlockHeight: 0,
@@ -60,7 +60,7 @@ func getRPC(t *testing.T) (*mocks.Application, *FullClient) {
 	t.Helper()
 	require := require.New(t)
 	app := &mocks.Application{}
-	app.On("InitChain", mock.Anything, mock.Anything).Return(&abci.ResponseInitChain{}, nil)
+	app.On("InitChain", mock.Anything, mock.Anything).Return(&abci.InitChainResponse{}, nil)
 	key, _, _ := crypto.GenerateEd25519Key(crand.Reader)
 	ctx := context.Background()
 	genesisDoc, genesisValidatorKey := types.GetGenesisWithPrivkey()
@@ -146,7 +146,7 @@ func TestCheckTx(t *testing.T) {
 	expectedTx := []byte("tx data")
 
 	mockApp, rpc := getRPC(t)
-	mockApp.On("CheckTx", context.Background(), &abci.RequestCheckTx{Tx: expectedTx}).Once().Return(&abci.ResponseCheckTx{}, nil)
+	mockApp.On("CheckTx", context.Background(), &abci.CheckTxRequest{Tx: expectedTx, Type: abci.CHECK_TX_TYPE_UNKNOWN}).Once().Return(&abci.CheckTxResponse{}, nil)
 
 	res, err := rpc.CheckTx(context.Background(), expectedTx)
 	assert.NoError(err)
@@ -167,7 +167,7 @@ func TestGenesisChunked(t *testing.T) {
 	}
 
 	mockApp := &mocks.Application{}
-	mockApp.On("InitChain", mock.Anything, mock.Anything).Return(&abci.ResponseInitChain{}, nil)
+	mockApp.On("InitChain", mock.Anything, mock.Anything).Return(&abci.InitChainResponse{}, nil)
 	privKey, _, _ := crypto.GenerateEd25519Key(crand.Reader)
 	signingKey, _, _ := crypto.GenerateEd25519Key(crand.Reader)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -201,7 +201,7 @@ func TestBroadcastTxAsync(t *testing.T) {
 	expectedTx := []byte("tx data")
 
 	mockApp, rpc := getRPC(t)
-	mockApp.On("CheckTx", mock.Anything, &abci.RequestCheckTx{Tx: expectedTx}).Return(&abci.ResponseCheckTx{}, nil)
+	mockApp.On("CheckTx", mock.Anything, &abci.CheckTxRequest{Tx: expectedTx, Type: abci.CHECK_TX_TYPE_CHECK}).Return(&abci.CheckTxResponse{}, nil)
 
 	startNodeWithCleanup(t, rpc.node)
 	res, err := rpc.BroadcastTxAsync(context.Background(), expectedTx)
@@ -219,7 +219,7 @@ func TestBroadcastTxSync(t *testing.T) {
 	assert := assert.New(t)
 
 	expectedTx := []byte("tx data")
-	expectedResponse := abci.ResponseCheckTx{
+	expectedResponse := abci.CheckTxResponse{
 		Code:      1,
 		Data:      []byte("data"),
 		Log:       "log",
@@ -233,7 +233,7 @@ func TestBroadcastTxSync(t *testing.T) {
 	mockApp, rpc := getRPC(t)
 
 	startNodeWithCleanup(t, rpc.node)
-	mockApp.On("CheckTx", mock.Anything, &abci.RequestCheckTx{Tx: expectedTx}).Return(&expectedResponse, nil)
+	mockApp.On("CheckTx", mock.Anything, &abci.CheckTxRequest{Tx: expectedTx, Type: abci.CHECK_TX_TYPE_CHECK}).Return(&expectedResponse, nil)
 
 	res, err := rpc.BroadcastTxSync(context.Background(), expectedTx)
 	assert.NoError(err)
@@ -251,7 +251,7 @@ func TestBroadcastTxSync(t *testing.T) {
 // 	require := require.New(t)
 
 // 	expectedTx := []byte("tx data")
-// 	expectedCheckResp := abci.ResponseCheckTx{
+// 	expectedCheckResp := abci.CheckTxResponse{
 // 		Code:      abci.CodeTypeOK,
 // 		Data:      []byte("data"),
 // 		Log:       "log",
@@ -275,7 +275,7 @@ func TestBroadcastTxSync(t *testing.T) {
 
 // 	mockApp, rpc := getRPC(t)
 // 	mockApp.On("FinalizeBlock", mock.Anything, mock.Anything).Return(finalizeBlockResponse)
-// 	mockApp.On("CheckTx", mock.Anything, &abci.RequestCheckTx{Tx: expectedTx}).Return(&expectedCheckResp, nil)
+// 	mockApp.On("CheckTx", mock.Anything, &abci.CheckTxRequest{Tx: expectedTx, Type: abci.CHECK_TX_TYPE_CHECK}).Return(&expectedCheckResp, nil)
 
 // 	// in order to broadcast, the node must be started
 // 	err := rpc.node.Start()
@@ -308,9 +308,9 @@ func TestGetBlock(t *testing.T) {
 	require := require.New(t)
 
 	mockApp, rpc := getRPC(t)
-	mockApp.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.ResponseCheckTx{}, nil)
+	mockApp.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.CheckTxResponse{}, nil)
 	mockApp.On("FinalizeBlock", mock.Anything, mock.Anything).Return(finalizeBlockResponse)
-	mockApp.On("Commit", mock.Anything, mock.Anything).Return(&abci.ResponseCommit{}, nil)
+	mockApp.On("Commit", mock.Anything, mock.Anything).Return(&abci.CommitResponse{}, nil)
 
 	startNodeWithCleanup(t, rpc.node)
 	ctx := context.Background()
@@ -331,7 +331,7 @@ func TestGetCommit(t *testing.T) {
 	assert := assert.New(t)
 	mockApp, rpc := getRPC(t)
 	mockApp.On("FinalizeBlock", mock.Anything, mock.Anything).Return(finalizeBlockResponse)
-	mockApp.On("Commit", mock.Anything, mock.Anything).Return(&abci.ResponseCommit{}, nil)
+	mockApp.On("Commit", mock.Anything, mock.Anything).Return(&abci.CommitResponse{}, nil)
 
 	blocks := []*types.Block{types.GetRandomBlock(1, 5), types.GetRandomBlock(2, 6), types.GetRandomBlock(3, 8), types.GetRandomBlock(4, 10)}
 
@@ -365,7 +365,7 @@ func TestCometBFTLightClientCompability(t *testing.T) {
 	assert := assert.New(t)
 	mockApp, rpc := getRPC(t)
 	mockApp.On("FinalizeBlock", mock.Anything, mock.Anything).Return(finalizeBlockResponse)
-	mockApp.On("Commit", mock.Anything, mock.Anything).Return(&abci.ResponseCommit{}, nil)
+	mockApp.On("Commit", mock.Anything, mock.Anything).Return(&abci.CommitResponse{}, nil)
 
 	// creat 3 consecutive signed blocks
 	config := types.BlockConfig{
@@ -432,7 +432,7 @@ func TestBlockSearch(t *testing.T) {
 	assert := assert.New(t)
 	mockApp, rpc := getRPC(t)
 	mockApp.On("FinalizeBlock", mock.Anything, mock.Anything).Return(finalizeBlockResponse)
-	mockApp.On("Commit", mock.Anything, mock.Anything).Return(&abci.ResponseCommit{}, nil)
+	mockApp.On("Commit", mock.Anything, mock.Anything).Return(&abci.CommitResponse{}, nil)
 
 	ctx := context.Background()
 	heights := []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
@@ -490,9 +490,9 @@ func TestGetBlockByHash(t *testing.T) {
 	require := require.New(t)
 
 	mockApp, rpc := getRPC(t)
-	mockApp.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.ResponseCheckTx{}, nil)
+	mockApp.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.CheckTxResponse{}, nil)
 	mockApp.On("FinalizeBlock", mock.Anything, mock.Anything).Return(finalizeBlockResponse)
-	mockApp.On("Commit", mock.Anything, mock.Anything).Return(&abci.ResponseCommit{}, nil)
+	mockApp.On("Commit", mock.Anything, mock.Anything).Return(&abci.CommitResponse{}, nil)
 
 	startNodeWithCleanup(t, rpc.node)
 	ctx := context.Background()
@@ -517,7 +517,7 @@ func TestGetBlockByHash(t *testing.T) {
 	assert.NotNil(blockResp.Block)
 }
 
-func finalizeBlockResponse(_ context.Context, req *abci.RequestFinalizeBlock) (*abci.ResponseFinalizeBlock, error) {
+func finalizeBlockResponse(_ context.Context, req *abci.FinalizeBlockRequest) (*abci.FinalizeBlockResponse, error) {
 	txResults := make([]*abci.ExecTxResult, len(req.Txs))
 	for idx := range req.Txs {
 		txResults[idx] = &abci.ExecTxResult{
@@ -525,7 +525,7 @@ func finalizeBlockResponse(_ context.Context, req *abci.RequestFinalizeBlock) (*
 		}
 	}
 
-	return &abci.ResponseFinalizeBlock{
+	return &abci.FinalizeBlockResponse{
 		TxResults: txResults,
 	}, nil
 }
@@ -535,9 +535,9 @@ func TestTx(t *testing.T) {
 	require := require.New(t)
 
 	mockApp := &mocks.Application{}
-	mockApp.On("InitChain", mock.Anything, mock.Anything).Return(&abci.ResponseInitChain{}, nil)
+	mockApp.On("InitChain", mock.Anything, mock.Anything).Return(&abci.InitChainResponse{}, nil)
 	mockApp.On("PrepareProposal", mock.Anything, mock.Anything).Return(prepareProposalResponse).Maybe()
-	mockApp.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_ACCEPT}, nil)
+	mockApp.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ProcessProposalResponse{Status: abci.PROCESS_PROPOSAL_STATUS_ACCEPT}, nil)
 	key, _, _ := crypto.GenerateEd25519Key(crand.Reader)
 	genesisDoc, genesisValidatorKey := types.GetGenesisWithPrivkey()
 	signingKey, err := types.PrivKeyToSigningKey(genesisValidatorKey)
@@ -560,8 +560,8 @@ func TestTx(t *testing.T) {
 
 	rpc := NewFullClient(node)
 	require.NotNil(rpc)
-	mockApp.On("Commit", mock.Anything, mock.Anything).Return(&abci.ResponseCommit{}, nil)
-	mockApp.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.ResponseCheckTx{}, nil)
+	mockApp.On("Commit", mock.Anything, mock.Anything).Return(&abci.CommitResponse{}, nil)
+	mockApp.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.CheckTxResponse{}, nil)
 	mockApp.On("FinalizeBlock", mock.Anything, mock.Anything).Return(finalizeBlockResponse)
 
 	startNodeWithCleanup(t, rpc.node)
@@ -607,7 +607,7 @@ func TestUnconfirmedTxs(t *testing.T) {
 
 			mockApp, rpc := getRPC(t)
 			mockApp.On("FinalizeBlock", mock.Anything, mock.Anything).Return(finalizeBlockResponse)
-			mockApp.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.ResponseCheckTx{}, nil)
+			mockApp.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.CheckTxResponse{}, nil)
 
 			startNodeWithCleanup(t, rpc.node)
 
@@ -641,7 +641,7 @@ func TestUnconfirmedTxsLimit(t *testing.T) {
 
 	mockApp, rpc := getRPC(t)
 	mockApp.On("FinalizeBlock", mock.Anything, mock.Anything).Return(finalizeBlockResponse)
-	mockApp.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.ResponseCheckTx{}, nil)
+	mockApp.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.CheckTxResponse{}, nil)
 
 	startNodeWithCleanup(t, rpc.node)
 
@@ -689,7 +689,7 @@ func TestBlockchainInfo(t *testing.T) {
 	assert := assert.New(t)
 	mockApp, rpc := getRPC(t)
 	mockApp.On("FinalizeBlock", mock.Anything, mock.Anything).Return(finalizeBlockResponse)
-	mockApp.On("Commit", mock.Anything, mock.Anything).Return(&abci.ResponseCommit{}, nil)
+	mockApp.On("Commit", mock.Anything, mock.Anything).Return(&abci.CommitResponse{}, nil)
 	ctx := context.Background()
 
 	heights := []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
@@ -782,12 +782,12 @@ func TestMempool2Nodes(t *testing.T) {
 	require.NoError(err)
 
 	app := &mocks.Application{}
-	app.On("InitChain", mock.Anything, mock.Anything).Return(&abci.ResponseInitChain{}, nil)
+	app.On("InitChain", mock.Anything, mock.Anything).Return(&abci.InitChainResponse{}, nil)
 	app.On("PrepareProposal", mock.Anything, mock.Anything).Return(prepareProposalResponse)
-	app.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_ACCEPT}, nil)
-	app.On("CheckTx", mock.Anything, &abci.RequestCheckTx{Tx: []byte("bad")}).Return(&abci.ResponseCheckTx{Code: 1}, nil)
-	app.On("CheckTx", mock.Anything, &abci.RequestCheckTx{Tx: []byte("good")}).Return(&abci.ResponseCheckTx{Code: 0}, nil)
-	app.On("CheckTx", mock.Anything, &abci.RequestCheckTx{Tx: []byte("good"), Type: abci.CheckTxType_Recheck}).Return(&abci.ResponseCheckTx{Code: 0}, nil).Maybe()
+	app.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ProcessProposalResponse{Status: abci.PROCESS_PROPOSAL_STATUS_ACCEPT}, nil)
+	app.On("CheckTx", mock.Anything, &abci.CheckTxRequest{Tx: []byte("bad"), Type: abci.CHECK_TX_TYPE_CHECK}).Return(&abci.CheckTxResponse{Code: 1}, nil)
+	app.On("CheckTx", mock.Anything, &abci.CheckTxRequest{Tx: []byte("good"), Type: abci.CHECK_TX_TYPE_CHECK}).Return(&abci.CheckTxResponse{Code: 0}, nil)
+	app.On("CheckTx", mock.Anything, &abci.CheckTxRequest{Tx: []byte("good"), Type: abci.CHECK_TX_TYPE_RECHECK}).Return(&abci.CheckTxResponse{Code: 0}, nil).Maybe()
 	key1, _, _ := crypto.GenerateEd25519Key(crand.Reader)
 	key2, _, _ := crypto.GenerateEd25519Key(crand.Reader)
 	signingKey2, _, _ := crypto.GenerateEd25519Key(crand.Reader)
@@ -796,7 +796,7 @@ func TestMempool2Nodes(t *testing.T) {
 	require.NoError(err)
 
 	// app.Commit(context.Background(), )
-	app.On("Commit", mock.Anything, mock.Anything).Return(&abci.ResponseCommit{}, nil)
+	app.On("Commit", mock.Anything, mock.Anything).Return(&abci.CommitResponse{}, nil)
 	app.On("FinalizeBlock", mock.Anything, mock.Anything).Return(finalizeBlockResponse)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -865,9 +865,9 @@ func TestStatus(t *testing.T) {
 	require := require.New(t)
 
 	app := &mocks.Application{}
-	app.On("InitChain", mock.Anything, mock.Anything).Return(&abci.ResponseInitChain{}, nil)
+	app.On("InitChain", mock.Anything, mock.Anything).Return(&abci.InitChainResponse{}, nil)
 	app.On("PrepareProposal", mock.Anything, mock.Anything).Return(prepareProposalResponse).Maybe()
-	app.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_ACCEPT}, nil)
+	app.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ProcessProposalResponse{Status: abci.PROCESS_PROPOSAL_STATUS_ACCEPT}, nil)
 	key, _, _ := crypto.GenerateEd25519Key(crand.Reader)
 	genesisDoc, genesisValidatorKey := types.GetGenesisWithPrivkey()
 	signingKey, err := types.PrivKeyToSigningKey(genesisValidatorKey)
@@ -997,15 +997,15 @@ func TestFutureGenesisTime(t *testing.T) {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	mockApp := &mocks.Application{}
-	mockApp.On("InitChain", mock.Anything, mock.Anything).Return(&abci.ResponseInitChain{}, nil)
+	mockApp.On("InitChain", mock.Anything, mock.Anything).Return(&abci.InitChainResponse{}, nil)
 	mockApp.On("PrepareProposal", mock.Anything, mock.Anything).Return(prepareProposalResponse).Maybe()
-	mockApp.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_ACCEPT}, nil)
+	mockApp.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ProcessProposalResponse{Status: abci.PROCESS_PROPOSAL_STATUS_ACCEPT}, nil)
 	mockApp.On("FinalizeBlock", mock.Anything, mock.Anything).Return(finalizeBlockResponse).Run(func(_ mock.Arguments) {
 		beginBlockTime = time.Now()
 		wg.Done()
 	})
-	mockApp.On("Commit", mock.Anything, mock.Anything).Return(&abci.ResponseCommit{}, nil)
-	mockApp.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.ResponseCheckTx{}, nil)
+	mockApp.On("Commit", mock.Anything, mock.Anything).Return(&abci.CommitResponse{}, nil)
+	mockApp.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.CheckTxResponse{}, nil)
 	key, _, _ := crypto.GenerateEd25519Key(crand.Reader)
 	genesisDoc, genesisValidatorKey := types.GetGenesisWithPrivkey()
 	signingKey, err := types.PrivKeyToSigningKey(genesisValidatorKey)
@@ -1044,8 +1044,8 @@ func TestHealth(t *testing.T) {
 
 	mockApp, rpc := getRPC(t)
 	mockApp.On("FinalizeBlock", mock.Anything, mock.Anything).Return(finalizeBlockResponse)
-	mockApp.On("CheckTx", mock.Anything, mock.Anything).Return(abci.ResponseCheckTx{}, nil)
-	mockApp.On("Commit", mock.Anything).Return(abci.ResponseCommit{}, nil)
+	mockApp.On("CheckTx", mock.Anything, mock.Anything).Return(abci.CheckTxResponse{}, nil)
+	mockApp.On("Commit", mock.Anything).Return(abci.CommitResponse{}, nil)
 
 	startNodeWithCleanup(t, rpc.node)
 
@@ -1060,8 +1060,8 @@ func TestNetInfo(t *testing.T) {
 
 	mockApp, rpc := getRPC(t)
 	mockApp.On("FinalizeBlock", mock.Anything, mock.Anything).Return(finalizeBlockResponse)
-	mockApp.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.ResponseCheckTx{}, nil)
-	mockApp.On("Commit", mock.Anything, mock.Anything).Return(&abci.ResponseCommit{}, nil)
+	mockApp.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.CheckTxResponse{}, nil)
+	mockApp.On("Commit", mock.Anything, mock.Anything).Return(&abci.CommitResponse{}, nil)
 
 	startNodeWithCleanup(t, rpc.node)
 

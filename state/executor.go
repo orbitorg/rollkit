@@ -8,8 +8,8 @@ import (
 	"time"
 
 	abci "github.com/cometbft/cometbft/abci/types"
+	cmproto "github.com/cometbft/cometbft/api/cometbft/types/v1"
 	cmbytes "github.com/cometbft/cometbft/libs/bytes"
-	cmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/cometbft/cometbft/proxy"
 	cmtypes "github.com/cometbft/cometbft/types"
 
@@ -57,7 +57,7 @@ func NewBlockExecutor(proposerAddress []byte, chainID string, mempool mempool.Me
 }
 
 // InitChain calls InitChainSync using consensus connection to app.
-func (e *BlockExecutor) InitChain(genesis *cmtypes.GenesisDoc) (*abci.ResponseInitChain, error) {
+func (e *BlockExecutor) InitChain(genesis *cmtypes.GenesisDoc) (*abci.InitChainResponse, error) {
 	params := genesis.ConsensusParams
 
 	validators := make([]*cmtypes.Validator, len(genesis.Validators))
@@ -65,7 +65,7 @@ func (e *BlockExecutor) InitChain(genesis *cmtypes.GenesisDoc) (*abci.ResponseIn
 		validators[i] = cmtypes.NewValidator(v.PubKey, v.Power)
 	}
 
-	return e.proxyApp.InitChain(context.Background(), &abci.RequestInitChain{
+	return e.proxyApp.InitChain(context.Background(), &abci.InitChainRequest{
 		Time:    genesis.GenesisTime,
 		ChainId: genesis.ChainID,
 		ConsensusParams: &cmproto.ConsensusParams{
@@ -139,7 +139,7 @@ func (e *BlockExecutor) CreateBlock(height uint64, lastCommit *types.Commit, las
 
 	rpp, err := e.proxyApp.PrepareProposal(
 		context.TODO(),
-		&abci.RequestPrepareProposal{
+		&abci.PrepareProposalRequest{
 			MaxTxBytes:         maxBytes,
 			Txs:                mempoolTxs.ToSliceOfBytes(),
 			LocalLastCommit:    lastExtendedCommit,
@@ -179,7 +179,7 @@ func (e *BlockExecutor) ProcessProposal(
 	block *types.Block,
 	state types.State,
 ) (bool, error) {
-	resp, err := e.proxyApp.ProcessProposal(context.TODO(), &abci.RequestProcessProposal{
+	resp, err := e.proxyApp.ProcessProposal(context.TODO(), &abci.ProcessProposalRequest{
 		Hash:   block.Hash(),
 		Height: int64(block.Height()),
 		Time:   block.Time(),
@@ -203,7 +203,7 @@ func (e *BlockExecutor) ProcessProposal(
 }
 
 // ApplyBlock validates and executes the block.
-func (e *BlockExecutor) ApplyBlock(ctx context.Context, state types.State, block *types.Block) (types.State, *abci.ResponseFinalizeBlock, error) {
+func (e *BlockExecutor) ApplyBlock(ctx context.Context, state types.State, block *types.Block) (types.State, *abci.FinalizeBlockResponse, error) {
 	isAppValid, err := e.ProcessProposal(block, state)
 	if err != nil {
 		return types.State{}, nil, err
@@ -240,7 +240,7 @@ func (e *BlockExecutor) ApplyBlock(ctx context.Context, state types.State, block
 
 // ExtendVote calls the ExtendVote ABCI method on the proxy app.
 func (e *BlockExecutor) ExtendVote(ctx context.Context, block *types.Block) ([]byte, error) {
-	resp, err := e.proxyApp.ExtendVote(ctx, &abci.RequestExtendVote{
+	resp, err := e.proxyApp.ExtendVote(ctx, &abci.ExtendVoteRequest{
 		Hash:   block.Hash(),
 		Height: int64(block.Height()),
 		Time:   block.Time(),
@@ -265,7 +265,7 @@ func (e *BlockExecutor) ExtendVote(ctx context.Context, block *types.Block) ([]b
 }
 
 // Commit commits the block
-func (e *BlockExecutor) Commit(ctx context.Context, state types.State, block *types.Block, resp *abci.ResponseFinalizeBlock) ([]byte, uint64, error) {
+func (e *BlockExecutor) Commit(ctx context.Context, state types.State, block *types.Block, resp *abci.FinalizeBlockResponse) ([]byte, uint64, error) {
 	appHash, retainHeight, err := e.commit(ctx, state, block, resp)
 	if err != nil {
 		return []byte{}, 0, err
@@ -290,7 +290,7 @@ func (e *BlockExecutor) updateConsensusParams(height uint64, params cmtypes.Cons
 	return nextParams.ToProto(), nextParams.Version.App, nil
 }
 
-func (e *BlockExecutor) updateState(state types.State, block *types.Block, finalizeBlockResponse *abci.ResponseFinalizeBlock) (types.State, error) {
+func (e *BlockExecutor) updateState(state types.State, block *types.Block, finalizeBlockResponse *abci.FinalizeBlockResponse) (types.State, error) {
 	height := block.Height()
 	if finalizeBlockResponse.ConsensusParamUpdates != nil {
 		nextParamsProto, appVersion, err := e.updateConsensusParams(height, types.ConsensusParamsFromProto(state.ConsensusParams), finalizeBlockResponse.ConsensusParamUpdates)
@@ -322,7 +322,7 @@ func (e *BlockExecutor) updateState(state types.State, block *types.Block, final
 	return s, nil
 }
 
-func (e *BlockExecutor) commit(ctx context.Context, state types.State, block *types.Block, resp *abci.ResponseFinalizeBlock) ([]byte, uint64, error) {
+func (e *BlockExecutor) commit(ctx context.Context, state types.State, block *types.Block, resp *abci.FinalizeBlockResponse) ([]byte, uint64, error) {
 	e.mempool.Lock()
 	defer e.mempool.Unlock()
 
@@ -373,7 +373,7 @@ func (e *BlockExecutor) Validate(state types.State, block *types.Block) error {
 	return nil
 }
 
-func (e *BlockExecutor) execute(ctx context.Context, state types.State, block *types.Block) (*abci.ResponseFinalizeBlock, error) {
+func (e *BlockExecutor) execute(ctx context.Context, state types.State, block *types.Block) (*abci.FinalizeBlockResponse, error) {
 	// Only execute if the node hasn't already shut down
 	select {
 	case <-ctx.Done():
@@ -391,7 +391,7 @@ func (e *BlockExecutor) execute(ctx context.Context, state types.State, block *t
 	}
 
 	startTime := time.Now().UnixNano()
-	finalizeBlockResponse, err := e.proxyApp.FinalizeBlock(ctx, &abci.RequestFinalizeBlock{
+	finalizeBlockResponse, err := e.proxyApp.FinalizeBlock(ctx, &abci.FinalizeBlockRequest{
 		Hash:               block.Hash(),
 		NextValidatorsHash: e.valsetHash,
 		ProposerAddress:    abciHeader.ProposerAddress,
@@ -429,7 +429,7 @@ func (e *BlockExecutor) execute(ctx context.Context, state types.State, block *t
 	return finalizeBlockResponse, nil
 }
 
-func (e *BlockExecutor) publishEvents(resp *abci.ResponseFinalizeBlock, block *types.Block, state types.State) {
+func (e *BlockExecutor) publishEvents(resp *abci.FinalizeBlockResponse, block *types.Block, state types.State) {
 	if e.eventBus == nil {
 		return
 	}

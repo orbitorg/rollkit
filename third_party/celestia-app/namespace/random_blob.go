@@ -1,7 +1,7 @@
 package namespace
 
 import (
-	tmrand "github.com/cometbft/cometbft/libs/rand"
+	tmrand "github.com/rollkit/rollkit/libs/rand"
 )
 
 func RandomBlobNamespaceID() []byte {

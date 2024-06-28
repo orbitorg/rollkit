@@ -4,6 +4,7 @@ import (
 	"context"
 
 	abci "github.com/cometbft/cometbft/abci/types"
+	v1 "github.com/cometbft/cometbft/api/cometbft/abci/v1"
 
 	"github.com/rollkit/rollkit/types"
 )
@@ -25,10 +26,10 @@ type Store interface {
 	GetBlockByHash(ctx context.Context, hash types.Hash) (*types.Block, error)
 
 	// SaveBlockResponses saves block responses (events, tx responses, validator set updates, etc) in Store.
-	SaveBlockResponses(ctx context.Context, height uint64, responses *abci.ResponseFinalizeBlock) error
+	SaveBlockResponses(ctx context.Context, height uint64, responses *v1.FinalizeBlockResponse) error
 
 	// GetBlockResponses returns block results at given height, or error if it's not found in Store.
-	GetBlockResponses(ctx context.Context, height uint64) (*abci.ResponseFinalizeBlock, error)
+	GetBlockResponses(ctx context.Context, height uint64) (*v1.FinalizeBlockResponse, error)
 
 	// GetCommit returns commit for a block at given height, or error if it's not found in Store.
 	GetCommit(ctx context.Context, height uint64) (*types.Commit, error)

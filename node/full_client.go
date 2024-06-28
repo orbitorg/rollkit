@@ -20,7 +20,6 @@ import (
 	"github.com/cometbft/cometbft/version"
 
 	rconfig "github.com/rollkit/rollkit/config"
-	"github.com/rollkit/rollkit/mempool"
 	"github.com/rollkit/rollkit/types"
 	abciconv "github.com/rollkit/rollkit/types/abci"
 )
@@ -60,7 +59,7 @@ func NewFullClient(node *FullNode) *FullClient {
 
 // ABCIInfo returns basic information about application state.
 func (c *FullClient) ABCIInfo(ctx context.Context) (*ctypes.ResultABCIInfo, error) {
-	resInfo, err := c.appClient().Query().Info(ctx, proxy.RequestInfo)
+	resInfo, err := c.appClient().Query().Info(ctx, proxy.InfoRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +73,7 @@ func (c *FullClient) ABCIQuery(ctx context.Context, path string, data cmbytes.He
 
 // ABCIQueryWithOptions queries for data from application.
 func (c *FullClient) ABCIQueryWithOptions(ctx context.Context, path string, data cmbytes.HexBytes, opts rpcclient.ABCIQueryOptions) (*ctypes.ResultABCIQuery, error) {
-	resQuery, err := c.appClient().Query().Query(ctx, &abci.RequestQuery{
+	resQuery, err := c.appClient().Query().Query(ctx, &abci.QueryRequest{
 		Path:   path,
 		Data:   data,
 		Height: opts.Height,
@@ -117,19 +116,23 @@ func (c *FullClient) BroadcastTxCommit(ctx context.Context, tx cmtypes.Tx) (*cty
 		}
 	}()
 
-	// add to mempool and wait for CheckTx result
-	checkTxResCh := make(chan *abci.ResponseCheckTx, 1)
-	err = c.node.Mempool.CheckTx(tx, func(res *abci.ResponseCheckTx) {
-		select {
-		case <-ctx.Done():
-			return
-		case checkTxResCh <- res:
-		}
-	}, mempool.TxInfo{})
+	// Broadcast tx and wait for CheckTx result
+	checkTxResCh := make(chan *abci.CheckTxResponse, 1)
+	reqRes, err := c.node.Mempool.CheckTx(tx, "")
 	if err != nil {
 		c.Logger.Error("Error on broadcastTxCommit", "err", err)
-		return nil, fmt.Errorf("error on broadcastTxCommit: %w", err)
+		return nil, fmt.Errorf("error on broadcastTxCommit: %v", err)
 	}
+	go func() {
+		// Wait for a response. The ABCI client guarantees that it will eventually call
+		// reqRes.Done(), even in the case of error.
+		reqRes.Wait()
+		select {
+		case <-ctx.Done():
+		default:
+			checkTxResCh <- reqRes.Response.GetCheckTx()
+		}
+	}()
 	checkTxRes := <-checkTxResCh
 	if checkTxRes.Code != abci.CodeTypeOK {
 		return &ctypes.ResultBroadcastTxCommit{
@@ -184,7 +187,7 @@ func (c *FullClient) BroadcastTxCommit(ctx context.Context, tx cmtypes.Tx) (*cty
 // CheckTx nor DeliverTx results.
 // More: https://docs.tendermint.com/master/rpc/#/Tx/broadcast_tx_async
 func (c *FullClient) BroadcastTxAsync(ctx context.Context, tx cmtypes.Tx) (*ctypes.ResultBroadcastTx, error) {
-	err := c.node.Mempool.CheckTx(tx, nil, mempool.TxInfo{})
+	_, err := c.node.Mempool.CheckTx(tx, "")
 	if err != nil {
 		return nil, err
 	}
@@ -200,17 +203,21 @@ func (c *FullClient) BroadcastTxAsync(ctx context.Context, tx cmtypes.Tx) (*ctyp
 // DeliverTx result.
 // More: https://docs.tendermint.com/master/rpc/#/Tx/broadcast_tx_sync
 func (c *FullClient) BroadcastTxSync(ctx context.Context, tx cmtypes.Tx) (*ctypes.ResultBroadcastTx, error) {
-	resCh := make(chan *abci.ResponseCheckTx, 1)
-	err := c.node.Mempool.CheckTx(tx, func(res *abci.ResponseCheckTx) {
-		select {
-		case <-ctx.Done():
-			return
-		case resCh <- res:
-		}
-	}, mempool.TxInfo{})
+	resCh := make(chan *abci.CheckTxResponse, 1)
+	reqRes, err := c.node.Mempool.CheckTx(tx, "")
 	if err != nil {
 		return nil, err
 	}
+	go func() {
+		// Wait for a response. The ABCI client guarantees that it will eventually call
+		// reqRes.Done(), even in the case of error.
+		reqRes.Wait()
+		select {
+		case <-ctx.Done():
+		default:
+			resCh <- reqRes.Response.GetCheckTx()
+		}
+	}()
 	res := <-resCh
 
 	// gossip the transaction if it's in the mempool.
@@ -477,7 +484,7 @@ func (c *FullClient) BlockResults(ctx context.Context, height *int64) (*ctypes.R
 
 	return &ctypes.ResultBlockResults{
 		Height:                int64(h),
-		TxsResults:            resp.TxResults,
+		TxResults:             resp.TxResults,
 		FinalizeBlockEvents:   resp.Events,
 		ValidatorUpdates:      resp.ValidatorUpdates,
 		ConsensusParamUpdates: resp.ConsensusParamUpdates,
@@ -814,11 +821,11 @@ func (c *FullClient) UnconfirmedTxs(ctx context.Context, limitPtr *int) (*ctypes
 //
 // If valid, the tx is automatically added to the mempool.
 func (c *FullClient) CheckTx(ctx context.Context, tx cmtypes.Tx) (*ctypes.ResultCheckTx, error) {
-	res, err := c.appClient().Mempool().CheckTx(ctx, &abci.RequestCheckTx{Tx: tx})
+	res, err := c.appClient().Mempool().CheckTx(ctx, &abci.CheckTxRequest{Tx: tx})
 	if err != nil {
 		return nil, err
 	}
-	return &ctypes.ResultCheckTx{ResponseCheckTx: *res}, nil
+	return &ctypes.ResultCheckTx{CheckTxResponse: *res}, nil
 }
 
 // Header returns a cometbft ResultsHeader for the FullClient

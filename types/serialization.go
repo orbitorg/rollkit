@@ -1,7 +1,7 @@
 package types
 
 import (
-	cmproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	cmproto "github.com/cometbft/cometbft/api/cometbft/types/v1"
 	"github.com/cometbft/cometbft/types"
 
 	pb "github.com/rollkit/rollkit/types/pb/rollkit"
@@ -354,7 +354,7 @@ func ConsensusParamsFromProto(pbParams cmproto.ConsensusParams) types.ConsensusP
 		},
 	}
 	if pbParams.Abci != nil {
-		c.ABCI.VoteExtensionsEnableHeight = pbParams.Abci.GetVoteExtensionsEnableHeight()
+		c.Feature.VoteExtensionsEnableHeight = pbParams.Feature.GetVoteExtensionsEnableHeight().Value
 	}
 	return c
 }

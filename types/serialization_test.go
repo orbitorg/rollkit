@@ -8,10 +8,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	cmstate "github.com/cometbft/cometbft/api/cometbft/state/v1"
+	cmproto "github.com/cometbft/cometbft/api/cometbft/types/v1"
+	cmversion "github.com/cometbft/cometbft/api/cometbft/version/v1"
 	"github.com/cometbft/cometbft/crypto/ed25519"
-	cmstate "github.com/cometbft/cometbft/proto/tendermint/state"
-	cmproto "github.com/cometbft/cometbft/proto/tendermint/types"
-	cmversion "github.com/cometbft/cometbft/proto/tendermint/version"
 	cmtypes "github.com/cometbft/cometbft/types"
 
 	pb "github.com/rollkit/rollkit/types/pb/rollkit"

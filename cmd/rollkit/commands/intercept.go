@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	cometos "github.com/cometbft/cometbft/libs/os"
+	cometos "github.com/rollkit/rollkit/libs/os"
 	"github.com/spf13/cobra"
 
 	rollconf "github.com/rollkit/rollkit/config"

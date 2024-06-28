@@ -4,26 +4,26 @@ option go_package = "github.com/rollkit/rollkit/types/pb/rollkit";
 
 import "gogoproto/gogo.proto";
 import "google/protobuf/timestamp.proto";
-import "tendermint/types/types.proto";
-import "tendermint/types/validator.proto";
-import "tendermint/types/params.proto";
-import "tendermint/state/types.proto";
+import "cometbft/types/v1/types.proto";
+import "cometbft/types/v1/validator.proto";
+import "cometbft/types/v1/params.proto";
+import "cometbft/state/v1/types.proto";
 
 
 message State {
-  tendermint.state.Version version = 1;
+  cometbft.state.v1.Version version = 1;
 
   string  chain_id = 2;
   uint64 initial_height = 3;
 
   uint64 last_block_height = 4;
 
-  tendermint.types.BlockID last_block_id = 5 [(gogoproto.nullable) = false, (gogoproto.customname) = "LastBlockID"];
+  cometbft.types.v1.BlockID last_block_id = 5 [(gogoproto.nullable) = false, (gogoproto.customname) = "LastBlockID"];
   google.protobuf.Timestamp last_block_time = 6 [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
 
   uint64 da_height = 7 [(gogoproto.customname) = "DAHeight"];
 
-  tendermint.types.ConsensusParams consensus_params = 8 [(gogoproto.nullable) = false];
+  cometbft.types.v1.ConsensusParams consensus_params = 8 [(gogoproto.nullable) = false];
   uint64 last_height_consensus_params_changed = 9;
 
   bytes last_results_hash = 10;

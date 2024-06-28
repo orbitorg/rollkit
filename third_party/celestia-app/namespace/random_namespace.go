@@ -1,6 +1,6 @@
 package namespace
 
-import tmrand "github.com/cometbft/cometbft/libs/rand"
+import tmrand "github.com/rollkit/rollkit/libs/rand"
 
 func RandomNamespace() Namespace {
 	for {

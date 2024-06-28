@@ -6,11 +6,12 @@ import (
 
 	// TODO(tzdybal): copy to local project?
 
-	cmstate "github.com/cometbft/cometbft/proto/tendermint/state"
-	cmproto "github.com/cometbft/cometbft/proto/tendermint/types"
-	cmversion "github.com/cometbft/cometbft/proto/tendermint/version"
+	cmstate "github.com/cometbft/cometbft/api/cometbft/state/v1"
+	cmproto "github.com/cometbft/cometbft/api/cometbft/types/v1"
+	cmversion "github.com/cometbft/cometbft/api/cometbft/version/v1"
 	"github.com/cometbft/cometbft/types"
 	"github.com/cometbft/cometbft/version"
+	gogotypes "github.com/cosmos/gogoproto/types"
 )
 
 // InitStateVersion sets the Consensus.Block and Software versions,
@@ -22,7 +23,7 @@ var InitStateVersion = cmstate.Version{
 		Block: version.BlockProtocol,
 		App:   0,
 	},
-	Software: version.TMCoreSemVer,
+	Software: version.CMTSemVer,
 }
 
 // State contains information about current state of the blockchain.
@@ -91,8 +92,10 @@ func NewFromGenesisDoc(genDoc *types.GenesisDoc) (State, error) {
 			Version: &cmproto.VersionParams{
 				App: genDoc.ConsensusParams.Version.App,
 			},
-			Abci: &cmproto.ABCIParams{
-				VoteExtensionsEnableHeight: genDoc.ConsensusParams.ABCI.VoteExtensionsEnableHeight,
+			Feature: &cmproto.FeatureParams{
+				VoteExtensionsEnableHeight: &gogotypes.Int64Value{
+					Value: genDoc.ConsensusParams.Feature.VoteExtensionsEnableHeight,
+				},
 			},
 		},
 		LastHeightConsensusParamsChanged: uint64(genDoc.InitialHeight),

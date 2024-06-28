@@ -32,8 +32,8 @@ const (
 	MockDANamespace = "00000000000000000000000000000000000000000000000000deadbeef"
 )
 
-func prepareProposalResponse(_ context.Context, req *abci.RequestPrepareProposal) (*abci.ResponsePrepareProposal, error) {
-	return &abci.ResponsePrepareProposal{
+func prepareProposalResponse(_ context.Context, req *abci.PrepareProposalRequest) (*abci.PrepareProposalResponse, error) {
+	return &abci.PrepareProposalResponse{
 		Txs: req.Txs,
 	}, nil
 }
@@ -43,11 +43,11 @@ func getRPC(t *testing.T) (*mocks.Application, rpcclient.Client) {
 	t.Helper()
 	require := require.New(t)
 	app := &mocks.Application{}
-	app.On("InitChain", mock.Anything, mock.Anything).Return(&abci.ResponseInitChain{}, nil)
+	app.On("InitChain", mock.Anything, mock.Anything).Return(&abci.InitChainResponse{}, nil)
 	app.On("PrepareProposal", mock.Anything, mock.Anything).Return(prepareProposalResponse).Maybe()
-	app.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_ACCEPT}, nil)
+	app.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ProcessProposalResponse{Status: abci.PROCESS_PROPOSAL_STATUS_ACCEPT}, nil)
 	app.On("FinalizeBlock", mock.Anything, mock.Anything).Return(
-		func(_ context.Context, req *abci.RequestFinalizeBlock) (*abci.ResponseFinalizeBlock, error) {
+		func(_ context.Context, req *abci.FinalizeBlockRequest) (*abci.FinalizeBlockResponse, error) {
 			txResults := make([]*abci.ExecTxResult, len(req.Txs))
 			for idx := range req.Txs {
 				txResults[idx] = &abci.ExecTxResult{
@@ -55,17 +55,17 @@ func getRPC(t *testing.T) (*mocks.Application, rpcclient.Client) {
 				}
 			}
 
-			return &abci.ResponseFinalizeBlock{
+			return &abci.FinalizeBlockResponse{
 				TxResults: txResults,
 			}, nil
 		},
 	)
-	app.On("Commit", mock.Anything, mock.Anything).Return(&abci.ResponseCommit{}, nil)
-	app.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.ResponseCheckTx{
+	app.On("Commit", mock.Anything, mock.Anything).Return(&abci.CommitResponse{}, nil)
+	app.On("CheckTx", mock.Anything, mock.Anything).Return(&abci.CheckTxResponse{
 		GasWanted: 1000,
 		GasUsed:   1000,
 	}, nil)
-	app.On("Info", mock.Anything, mock.Anything).Return(&abci.ResponseInfo{
+	app.On("Info", mock.Anything, mock.Anything).Return(&abci.InfoResponse{
 		Data:             "mock",
 		Version:          "mock",
 		AppVersion:       123,

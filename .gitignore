@@ -1,6 +1,7 @@
 coverage.txt
 proto/pb
 proto/tendermint
+proto/cometbft
 types/pb/tendermint
 .vscode/launch.json
 */**.html

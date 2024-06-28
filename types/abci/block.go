@@ -3,9 +3,9 @@ package abci
 import (
 	"errors"
 
+	cmproto "github.com/cometbft/cometbft/api/cometbft/types/v1"
+	cmversion "github.com/cometbft/cometbft/api/cometbft/version/v1"
 	cmbytes "github.com/cometbft/cometbft/libs/bytes"
-	cmproto "github.com/cometbft/cometbft/proto/tendermint/types"
-	cmversion "github.com/cometbft/cometbft/proto/tendermint/version"
 	cmtypes "github.com/cometbft/cometbft/types"
 
 	"github.com/rollkit/rollkit/types"

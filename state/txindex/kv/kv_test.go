@@ -15,8 +15,8 @@ import (
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cometbft/cometbft/libs/pubsub/query"
-	cmrand "github.com/cometbft/cometbft/libs/rand"
 	"github.com/cometbft/cometbft/types"
+	cmrand "github.com/rollkit/rollkit/libs/rand"
 
 	"github.com/rollkit/rollkit/state/txindex"
 	"github.com/rollkit/rollkit/store"
