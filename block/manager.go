@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	secp256k1 "github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	abci "github.com/cometbft/cometbft/abci/types"
 	cmproto "github.com/cometbft/cometbft/api/cometbft/types/v1"
 	cmcrypto "github.com/cometbft/cometbft/crypto"
@@ -18,6 +20,7 @@ import (
 	cmtypes "github.com/cometbft/cometbft/types"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/crypto/pb"
 	pkgErrors "github.com/pkg/errors"
 
 	goheaderstore "github.com/celestiaorg/go-header/store"
@@ -61,8 +64,8 @@ const blockInChLength = 10000
 var initialBackoff = 100 * time.Millisecond
 
 var (
-	// ErrNoValidatorsInGenesis is used when no validators/proposers are found in genesis state
-	ErrNoValidatorsInGenesis = errors.New("no validators found in genesis")
+	// ErrNoValidatorsInState is used when no validators/proposers are found in state
+	ErrNoValidatorsInState = errors.New("no validators found in state")
 
 	// ErrNotProposer is used when the manager is not a proposer
 	ErrNotProposer = errors.New("not a proposer")
@@ -107,10 +110,6 @@ type Manager struct {
 	retrieveCh chan struct{}
 
 	logger log.Logger
-
-	// Rollkit doesn't have "validators", but
-	// we store the sequencer in this struct for compatibility.
-	validatorSet *cmtypes.ValidatorSet
 
 	// For usage by Lazy Aggregator mode
 	buildingBlock bool
@@ -172,10 +171,6 @@ func NewManager(
 	//set block height in store
 	store.SetHeight(context.Background(), s.LastBlockHeight)
 
-	// genesis should have exactly one "validator", the centralized sequencer.
-	// this should have been validated in the above call to getInitialState.
-	valSet := types.GetValidatorSetFromGenesis(genesis)
-
 	if s.DAHeight < conf.DAStartHeight {
 		s.DAHeight = conf.DAStartHeight
 	}
@@ -200,15 +195,7 @@ func NewManager(
 		conf.DAMempoolTTL = defaultMempoolTTL
 	}
 
-	proposerAddress, err := getAddress(proposerKey)
-	if err != nil {
-		return nil, err
-	}
-
-	isProposer, err := isProposer(genesis, proposerKey)
-	if err != nil {
-		return nil, err
-	}
+	proposerAddress := s.Validators.Proposer.Address.Bytes()
 
 	maxBlobSize, err := dalc.DA.MaxBlobSize(context.Background())
 	if err != nil {
@@ -217,17 +204,24 @@ func NewManager(
 	// allow buffer for the block header and protocol encoding
 	maxBlobSize -= blockProtocolOverhead
 
-	exec := state.NewBlockExecutor(proposerAddress, genesis.ChainID, mempool, proxyApp, eventBus, maxBlobSize, logger, execMetrics, valSet.Hash())
+	exec := state.NewBlockExecutor(proposerAddress, genesis.ChainID, mempool, proxyApp, eventBus, maxBlobSize, logger, execMetrics)
 	if s.LastBlockHeight+1 == uint64(genesis.InitialHeight) {
 		res, err := exec.InitChain(genesis)
 		if err != nil {
 			return nil, err
 		}
+		if err := updateState(&s, res); err != nil {
+			return nil, err
+		}
 
-		updateState(&s, res)
 		if err := store.UpdateState(context.Background(), s); err != nil {
 			return nil, err
 		}
+	}
+
+	isProposer, err := isProposer(proposerKey, s)
+	if err != nil {
+		return nil, err
 	}
 
 	var txsAvailableCh <-chan struct{}
@@ -261,7 +255,6 @@ func NewManager(
 		blockCache:    NewBlockCache(),
 		retrieveCh:    make(chan struct{}, 1),
 		logger:        logger,
-		validatorSet:  &valSet,
 		txsAvailable:  txsAvailableCh,
 		buildingBlock: false,
 		pendingBlocks: pendingBlocks,
@@ -271,29 +264,23 @@ func NewManager(
 	return agg, nil
 }
 
-func getAddress(key crypto.PrivKey) ([]byte, error) {
-	rawKey, err := key.GetPublic().Raw()
-	if err != nil {
-		return nil, err
-	}
-	return cmcrypto.AddressHash(rawKey), nil
-}
-
 // SetDALC is used to set DataAvailabilityLayerClient used by Manager.
 func (m *Manager) SetDALC(dalc *da.DAClient) {
 	m.dalc = dalc
 }
 
 // isProposer returns whether or not the manager is a proposer
-func isProposer(genesis *cmtypes.GenesisDoc, signerPrivKey crypto.PrivKey) (bool, error) {
-	if len(genesis.Validators) == 0 {
-		return false, ErrNoValidatorsInGenesis
+func isProposer(signerPrivKey crypto.PrivKey, s types.State) (bool, error) {
+	if len(s.Validators.Validators) == 0 {
+		return false, ErrNoValidatorsInState
 	}
+
 	signerPubBytes, err := signerPrivKey.GetPublic().Raw()
 	if err != nil {
 		return false, err
 	}
-	return bytes.Equal(genesis.Validators[0].PubKey.Bytes(), signerPubBytes), nil
+
+	return bytes.Equal(s.Validators.Validators[0].PubKey.Bytes(), signerPubBytes), nil
 }
 
 // SetLastState is used to set lastState used by Manager.
@@ -754,8 +741,7 @@ func getRemainingSleep(start time.Time, interval, defaultSleep time.Duration) ti
 func (m *Manager) getCommit(header types.Header) (*types.Commit, error) {
 	// note: for compatibility with tendermint light client
 	consensusVote := header.MakeCometBFTVote()
-
-	sign, err := m.proposerKey.Sign(consensusVote)
+	sign, err := m.sign(consensusVote)
 	if err != nil {
 		return nil, err
 	}
@@ -786,7 +772,6 @@ func (m *Manager) publishBlock(ctx context.Context) error {
 	)
 	height := m.store.Height()
 	newHeight := height + 1
-
 	// this is a special case, when first block is produced - there is no previous commit
 	if newHeight == uint64(m.genesis.InitialHeight) {
 		lastCommit = &types.Commit{}
@@ -823,9 +808,6 @@ func (m *Manager) publishBlock(ctx context.Context) error {
 		}
 		m.logger.Debug("block info", "num_tx", len(block.Data.Txs))
 
-		block.SignedHeader.Validators = m.validatorSet
-		block.SignedHeader.ValidatorHash = m.validatorSet.Hash()
-
 		/*
 		   here we set the SignedHeader.DataHash, and SignedHeader.Commit as a hack
 		   to make the block pass ValidateBasic() when it gets called by applyBlock on line 681
@@ -835,6 +817,9 @@ func (m *Manager) publishBlock(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+
+		block.SignedHeader.Validators = m.getLastStateValidators()
+		block.SignedHeader.ValidatorHash = block.SignedHeader.Validators.Hash()
 
 		commit, err = m.getCommit(block.SignedHeader.Header)
 		if err != nil {
@@ -857,7 +842,6 @@ func (m *Manager) publishBlock(ctx context.Context) error {
 		// if call to applyBlock fails, we halt the node, see https://github.com/cometbft/cometbft/pull/496
 		panic(err)
 	}
-
 	// Before taking the hash, we need updated ISRs, hence after ApplyBlock
 	block.SignedHeader.Header.DataHash, err = block.Data.Hash()
 	if err != nil {
@@ -881,7 +865,7 @@ func (m *Manager) publishBlock(ctx context.Context) error {
 	}
 
 	blockHeight := block.Height()
-	// Update the stored height before submitting to the DA layer and committing to the DB
+	// Update the store height before submitting to the DA layer and committing to the DB
 	m.store.SetHeight(ctx, blockHeight)
 
 	blockHash := block.Hash().String()
@@ -936,6 +920,28 @@ func (m *Manager) publishBlock(ctx context.Context) error {
 	return nil
 }
 
+func (m *Manager) sign(payload []byte) ([]byte, error) {
+	var sig []byte
+	switch m.proposerKey.Type() {
+	case pb.KeyType_Ed25519:
+		return m.proposerKey.Sign(payload)
+	case pb.KeyType_Secp256k1:
+		k := m.proposerKey.(*crypto.Secp256k1PrivateKey)
+		rawBytes, err := k.Raw()
+		if err != nil {
+			return nil, err
+		}
+		priv, _ := secp256k1.PrivKeyFromBytes(rawBytes)
+		sig, err = ecdsa.SignCompact(priv, cmcrypto.Sha256(payload), false)
+		if err != nil {
+			return nil, err
+		}
+		return sig[1:], nil
+	default:
+		return nil, fmt.Errorf("unsupported private key type: %T", m.proposerKey)
+	}
+}
+
 func (m *Manager) processVoteExtension(ctx context.Context, block *types.Block, newHeight uint64) error {
 	if !m.voteExtensionEnabled(newHeight) {
 		return nil
@@ -945,9 +951,17 @@ func (m *Manager) processVoteExtension(ctx context.Context, block *types.Block, 
 	if err != nil {
 		return fmt.Errorf("error returned by ExtendVote: %w", err)
 	}
-	sign, err := m.proposerKey.Sign(extension)
+
+	vote := &cmproto.Vote{
+		Height:    int64(newHeight),
+		Round:     0,
+		Extension: extension,
+	}
+	extSignBytes := cmtypes.VoteExtensionSignBytes(m.genesis.ChainID, vote)
+
+	sign, err := m.sign(extSignBytes)
 	if err != nil {
-		return fmt.Errorf("error signing vote extension: %w", err)
+		return fmt.Errorf("failed to sign vote extension: %w", err)
 	}
 	extendedCommit := buildExtendedCommit(block, extension, sign)
 	err = m.store.SaveExtendedCommit(ctx, newHeight, extendedCommit)
@@ -996,7 +1010,6 @@ func (m *Manager) recordMetrics(block *types.Block) {
 	m.metrics.BlockSizeBytes.Set(float64(block.Size()))
 	m.metrics.CommittedHeight.Set(float64(block.Height()))
 }
-
 func (m *Manager) submitBlocksToDA(ctx context.Context) error {
 	submittedAllBlocks := false
 	var backoff time.Duration
@@ -1106,6 +1119,12 @@ func (m *Manager) exponentialBackoff(backoff time.Duration) time.Duration {
 	return backoff
 }
 
+func (m *Manager) getLastStateValidators() *cmtypes.ValidatorSet {
+	m.lastStateMtx.RLock()
+	defer m.lastStateMtx.RUnlock()
+	return m.lastState.Validators
+}
+
 // Updates the state stored in manager's store along the manager's lastState
 func (m *Manager) updateState(ctx context.Context, s types.State) error {
 	m.lastStateMtx.Lock()
@@ -1137,7 +1156,7 @@ func (m *Manager) applyBlock(ctx context.Context, block *types.Block) (types.Sta
 	return m.executor.ApplyBlock(ctx, m.lastState, block)
 }
 
-func updateState(s *types.State, res *abci.InitChainResponse) {
+func updateState(s *types.State, res *abci.InitChainResponse) error {
 	// If the app did not return an app hash, we keep the one set from the genesis doc in
 	// the state. We don't set appHash since we don't want the genesis doc app hash
 	// recorded in the genesis block. We should probably just remove GenesisDoc.AppHash.
@@ -1169,4 +1188,24 @@ func updateState(s *types.State, res *abci.InitChainResponse) {
 	// We update the last results hash with the empty hash, to conform with RFC-6962.
 	s.LastResultsHash = merkle.HashFromByteSlices(nil)
 
+	vals, err := cmtypes.PB2TM.ValidatorUpdates(res.Validators)
+	if err != nil {
+		return err
+	}
+
+	// apply initchain valset change
+	nValSet := s.Validators.Copy()
+	err = nValSet.UpdateWithChangeSet(vals)
+	if err != nil {
+		return err
+	}
+	if len(nValSet.Validators) != 1 {
+		return fmt.Errorf("expected exactly one validator")
+	}
+
+	s.Validators = cmtypes.NewValidatorSet(nValSet.Validators)
+	s.NextValidators = cmtypes.NewValidatorSet(nValSet.Validators).CopyIncrementProposerPriority(1)
+	s.LastValidators = cmtypes.NewValidatorSet(nValSet.Validators)
+
+	return nil
 }

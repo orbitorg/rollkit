@@ -14,7 +14,7 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 	cmproto "github.com/cometbft/cometbft/api/cometbft/types/v1"
 	cmconfig "github.com/cometbft/cometbft/config"
-	"github.com/cometbft/cometbft/crypto/ed25519"
+	cmcrypto "github.com/cometbft/cometbft/crypto"
 	"github.com/cometbft/cometbft/proxy"
 	cmtypes "github.com/cometbft/cometbft/types"
 
@@ -199,7 +199,7 @@ func TestPendingBlocks(t *testing.T) {
 		_ = os.RemoveAll(dbPath)
 	}()
 
-	genesis, genesisValidatorKey := types.GetGenesisWithPrivkey()
+	genesis, genesisValidatorKey := types.GetGenesisWithPrivkey(types.DefaultSigningKeyType)
 
 	node, _ := createAggregatorWithPersistence(ctx, dbPath, dac, genesis, genesisValidatorKey, t)
 	err = node.Start()
@@ -273,52 +273,66 @@ func TestVoteExtension(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// TestPrepareProposalVoteExtChecker
-	t.Run("TestPrepareProposalVoteExtChecker", func(t *testing.T) {
-		app, node, signingKey := createNodeAndApp(ctx, voteExtensionEnableHeight, t)
+	testCases := []struct {
+		sigingKeyType string
+	}{
+		{sigingKeyType: "ed25519"},
+		{sigingKeyType: "secp256k1"},
+	}
 
-		prepareProposalVoteExtChecker := func(_ context.Context, req *abci.PrepareProposalRequest) (*abci.PrepareProposalResponse, error) {
-			if req.Height <= voteExtensionEnableHeight {
-				require.Empty(req.LocalLastCommit.Votes)
-			} else {
-				require.Len(req.LocalLastCommit.Votes, 1)
-				extendedCommit := req.LocalLastCommit.Votes[0]
-				require.NotNil(extendedCommit)
-				require.Equal(extendedCommit.BlockIdFlag, cmproto.BlockIDFlagCommit)
-				// during PrepareProposal at height h, vote extensions from previous block (h-1) is available
-				require.Equal([]byte(fmt.Sprintf(expectedExtension, req.Height-1)), extendedCommit.VoteExtension)
-				require.NotNil(extendedCommit.Validator)
-				require.NotNil(extendedCommit.Validator.Address)
-				require.NotEmpty(extendedCommit.ExtensionSignature)
-				ok, err := signingKey.GetPublic().Verify(extendedCommit.VoteExtension, extendedCommit.ExtensionSignature)
-				require.NoError(err)
-				require.True(ok)
+	for _, tc := range testCases {
+		// TestPrepareProposalVoteExtChecker
+		t.Run("TestPrepareProposalVoteExtChecker", func(t *testing.T) {
+			app, node, pubKey := createNodeAndApp(ctx, voteExtensionEnableHeight, tc.sigingKeyType, t)
+
+			prepareProposalVoteExtChecker := func(_ context.Context, req *abci.PrepareProposalRequest) (*abci.PrepareProposalResponse, error) {
+				if req.Height <= voteExtensionEnableHeight {
+					require.Empty(req.LocalLastCommit.Votes)
+				} else {
+					require.Len(req.LocalLastCommit.Votes, 1)
+					extendedCommit := req.LocalLastCommit.Votes[0]
+					require.NotNil(extendedCommit)
+					require.Equal(extendedCommit.BlockIdFlag, cmproto.BlockIDFlagCommit)
+					// during PrepareProposal at height h, vote extensions from previous block (h-1) is available
+					require.Equal([]byte(fmt.Sprintf(expectedExtension, req.Height-1)), extendedCommit.VoteExtension)
+					require.NotNil(extendedCommit.Validator)
+					require.NotNil(extendedCommit.Validator.Address)
+					require.NotEmpty(extendedCommit.ExtensionSignature)
+					vote := &cmproto.Vote{
+						Height:    req.Height - 1,
+						Round:     0,
+						Extension: extendedCommit.VoteExtension,
+					}
+					extSignBytes := cmtypes.VoteExtensionSignBytes(types.TestChainID, vote)
+					fmt.Println("failing block height", req.Height)
+					ok := pubKey.VerifySignature(extSignBytes, extendedCommit.ExtensionSignature)
+					require.True(ok)
+				}
+				return &abci.PrepareProposalResponse{
+					Txs: req.Txs,
+				}, nil
 			}
-			return &abci.PrepareProposalResponse{
-				Txs: req.Txs,
-			}, nil
-		}
-		voteExtension := func(_ context.Context, req *abci.ExtendVoteRequest) (*abci.ExtendVoteResponse, error) {
-			return &abci.ExtendVoteResponse{
-				VoteExtension: []byte(fmt.Sprintf(expectedExtension, req.Height)),
-			}, nil
-		}
-		app.On("Commit", mock.Anything, mock.Anything).Return(&abci.CommitResponse{}, nil)
-		app.On("PrepareProposal", mock.Anything, mock.Anything).Return(prepareProposalVoteExtChecker)
-		app.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ProcessProposalResponse{Status: abci.PROCESS_PROPOSAL_STATUS_ACCEPT}, nil)
-		app.On("FinalizeBlock", mock.Anything, mock.Anything).Return(finalizeBlockResponse)
-		app.On("ExtendVote", mock.Anything, mock.Anything).Return(voteExtension)
-		require.NotNil(app)
+			voteExtension := func(_ context.Context, req *abci.ExtendVoteRequest) (*abci.ExtendVoteResponse, error) {
+				return &abci.ExtendVoteResponse{
+					VoteExtension: []byte(fmt.Sprintf(expectedExtension, req.Height)),
+				}, nil
+			}
+			app.On("Commit", mock.Anything, mock.Anything).Return(&abci.CommitResponse{}, nil)
+			app.On("PrepareProposal", mock.Anything, mock.Anything).Return(prepareProposalVoteExtChecker)
+			app.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ProcessProposalResponse{Status: abci.PROCESS_PROPOSAL_STATUS_ACCEPT}, nil)
+			app.On("FinalizeBlock", mock.Anything, mock.Anything).Return(finalizeBlockResponse)
+			app.On("ExtendVote", mock.Anything, mock.Anything).Return(voteExtension)
+			require.NotNil(app)
 
-		require.NoError(node.Start())
-		require.NoError(waitForAtLeastNBlocks(node, 10, Store))
-		require.NoError(node.Stop())
-		app.AssertExpectations(t)
-	})
-
+			require.NoError(node.Start())
+			require.NoError(waitForAtLeastNBlocks(node, 10, Store))
+			require.NoError(node.Stop())
+			app.AssertExpectations(t)
+		})
+	}
 	// TestExtendVoteFailure
 	t.Run("TestExtendVoteFailure", func(t *testing.T) {
-		app, node, _ := createNodeAndApp(ctx, voteExtensionEnableHeight, t)
+		app, node, _ := createNodeAndApp(ctx, voteExtensionEnableHeight, types.DefaultSigningKeyType, t)
 		require.NotNil(node)
 
 		// Create a channel to signal from extendVoteFailure
@@ -371,18 +385,18 @@ func TestVoteExtension(t *testing.T) {
 }
 
 // Create & configure node with app. Get signing key for mock functions.
-func createNodeAndApp(ctx context.Context, voteExtensionEnableHeight int64, t *testing.T) (*mocks.Application, Node, crypto.PrivKey) {
+func createNodeAndApp(ctx context.Context, voteExtensionEnableHeight int64, sigingKeyType string, t *testing.T) (*mocks.Application, Node, cmcrypto.PubKey) {
 	require := require.New(t)
 
 	app := &mocks.Application{}
 	app.On("InitChain", mock.Anything, mock.Anything).Return(&abci.InitChainResponse{}, nil)
-	node, signingKey := createAggregatorWithApp(ctx, app, voteExtensionEnableHeight, t)
+	node, pubKey := createAggregatorWithApp(ctx, app, voteExtensionEnableHeight, sigingKeyType, t)
 	require.NotNil(node)
-	require.NotNil(signingKey)
-	return app, node, signingKey
+	require.NotNil(pubKey)
+	return app, node, pubKey
 }
 
-func createAggregatorWithPersistence(ctx context.Context, dbPath string, dalc *da.DAClient, genesis *cmtypes.GenesisDoc, genesisValidatorKey ed25519.PrivKey, t *testing.T) (Node, *mocks.Application) {
+func createAggregatorWithPersistence(ctx context.Context, dbPath string, dalc *da.DAClient, genesis *cmtypes.GenesisDoc, genesisValidatorKey cmcrypto.PrivKey, t *testing.T) (Node, *mocks.Application) {
 	t.Helper()
 
 	key, _, _ := crypto.GenerateEd25519Key(rand.Reader)
@@ -421,11 +435,12 @@ func createAggregatorWithPersistence(ctx context.Context, dbPath string, dalc *d
 	return fullNode, app
 }
 
-func createAggregatorWithApp(ctx context.Context, app abci.Application, voteExtensionEnableHeight int64, t *testing.T) (Node, crypto.PrivKey) {
+func createAggregatorWithApp(ctx context.Context, app abci.Application, voteExtensionEnableHeight int64, sigingKeyType string, t *testing.T) (Node, cmcrypto.PubKey) {
 	t.Helper()
 
 	key, _, _ := crypto.GenerateEd25519Key(rand.Reader)
-	genesis, genesisValidatorKey := types.GetGenesisWithPrivkey()
+	genesis, genesisValidatorKey := types.GetGenesisWithPrivkey(sigingKeyType)
+	fmt.Println("genesis key type", genesis.Validators[0].PubKey.Type())
 	genesis.ConsensusParams = &cmtypes.ConsensusParams{
 		Block:     cmtypes.DefaultBlockParams(),
 		Evidence:  cmtypes.DefaultEvidenceParams(),
@@ -458,7 +473,7 @@ func createAggregatorWithApp(ctx context.Context, app abci.Application, voteExte
 	require.NoError(t, err)
 	require.NotNil(t, node)
 
-	return node, signingKey
+	return node, genesis.Validators[0].PubKey
 }
 
 // setupMockApplication initializes a mock application
