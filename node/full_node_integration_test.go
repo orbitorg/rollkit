@@ -318,13 +318,13 @@ func TestChangeValSet(t *testing.T) {
 	require := require.New(t)
 
 	app := &mocks.Application{}
-	app.On("InitChain", mock.Anything, mock.Anything).Return(&abci.ResponseInitChain{}, nil)
-	app.On("CheckTx", mock.Anything, mock.Anything).Return(func() (*abci.ResponseCheckTx, error) {
-		return &abci.ResponseCheckTx{}, nil
+	app.On("InitChain", mock.Anything, mock.Anything).Return(&abci.InitChainResponse{}, nil)
+	app.On("CheckTx", mock.Anything, mock.Anything).Return(func() (*abci.CheckTxResponse, error) {
+		return &abci.CheckTxResponse{}, nil
 	})
 	app.On("PrepareProposal", mock.Anything, mock.Anything).Return(prepareProposalResponse).Maybe()
-	app.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_ACCEPT}, nil)
-	app.On("Commit", mock.Anything, mock.Anything).Return(&abci.ResponseCommit{}, nil)
+	app.On("ProcessProposal", mock.Anything, mock.Anything).Return(&abci.ProcessProposalResponse{Status: abci.PROCESS_PROPOSAL_STATUS_ACCEPT}, nil)
+	app.On("Commit", mock.Anything, mock.Anything).Return(&abci.CommitResponse{}, nil)
 
 	// tmpubKey1
 	key, _, _ := crypto.GenerateEd25519Key(rand.Reader)
@@ -339,17 +339,19 @@ func TestChangeValSet(t *testing.T) {
 	tmPubKey2, _ := cryptoenc.PubKeyToProto(key2.PubKey())
 
 	// update valset in height 10
-	app.On("FinalizeBlock", mock.Anything, mock.Anything).Return(func(ctx context.Context, req *abci.RequestFinalizeBlock) (resp *abci.ResponseFinalizeBlock, err error) {
+	app.On("FinalizeBlock", mock.Anything, mock.Anything).Return(func(ctx context.Context, req *abci.FinalizeBlockRequest) (resp *abci.FinalizeBlockResponse, err error) {
 		if req.Height == 10 {
-			return &abci.ResponseFinalizeBlock{
+			return &abci.FinalizeBlockResponse{
 				ValidatorUpdates: []abci.ValidatorUpdate{
 					{
-						PubKey: tmPubKey1,
-						Power:  0,
+						PubKeyBytes: tmPubKey1.GetEd25519(),
+						Power:       0,
+						PubKeyType:  "ed25519",
 					},
 					{
-						PubKey: tmPubKey2,
-						Power:  1,
+						PubKeyBytes: tmPubKey2.GetEd25519(),
+						Power:       1,
+						PubKeyType:  "ed25519",
 					},
 				},
 			}, nil
