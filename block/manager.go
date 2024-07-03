@@ -923,7 +923,7 @@ func (m *Manager) publishBlock(ctx context.Context) error {
 func (m *Manager) sign(payload []byte) ([]byte, error) {
 	var sig []byte
 	switch m.proposerKey.Type() {
-	case pb.KeyType_Ed25519:
+	case pb.KeyType_Ed25519, pb.KeyType_ECDSA:
 		return m.proposerKey.Sign(payload)
 	case pb.KeyType_Secp256k1:
 		k := m.proposerKey.(*crypto.Secp256k1PrivateKey)

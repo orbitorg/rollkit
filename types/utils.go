@@ -9,11 +9,13 @@ import (
 
 	"github.com/celestiaorg/go-header"
 	cmcrypto "github.com/cometbft/cometbft/crypto"
+	"github.com/cometbft/cometbft/crypto/bls12381"
 	"github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/cometbft/cometbft/crypto/secp256k1"
 	"github.com/cometbft/cometbft/p2p"
 	cmtypes "github.com/cometbft/cometbft/types"
 	"github.com/libp2p/go-libp2p/core/crypto"
+	pb "github.com/libp2p/go-libp2p/core/crypto/pb"
 )
 
 // TestChainID is a constant used for testing purposes. It represents a mock chain ID.
@@ -261,6 +263,12 @@ func GetNodeKey(nodeKey *p2p.NodeKey) (crypto.PrivKey, error) {
 			return nil, fmt.Errorf("error unmarshalling node private key: %w", err)
 		}
 		return privKey, nil
+	case "bls12_381":
+		privKey, err := UnmarshalBLSPrivateKey(nodeKey.PrivKey.Bytes())
+		if err != nil {
+			return nil, fmt.Errorf("error unmarshalling node private key: %w", err)
+		}
+		return privKey, nil
 	default:
 		return nil, errUnsupportedKeyType
 	}
@@ -398,4 +406,78 @@ func getBlockDataWith(nTxs int) *Block {
 		// block.Data.IntermediateStateRoots.RawRootsList = nil
 	}
 	return block
+}
+
+type CometBLSPrivateKey struct {
+	bls12381.PrivKey
+}
+
+func UnmarshalBLSPrivateKey(data []byte) (crypto.PrivKey, error) {
+	privk, err := bls12381.NewPrivateKeyFromBytes(data)
+	return CometBLSPrivateKey{privk}, err
+}
+
+// Type returns the key type
+func (privKey CometBLSPrivateKey) Type() pb.KeyType {
+	return pb.KeyType_ECDSA
+}
+
+// Raw returns x509 bytes from a private key
+func (privKey CometBLSPrivateKey) Raw() (res []byte, err error) {
+	return privKey.Bytes(), nil
+}
+
+// Equals returns true if two keys are equal and false otherwise.
+func (privKey CometBLSPrivateKey) Equals(o crypto.Key) bool {
+	privBytes, err := privKey.Raw()
+	if err != nil {
+		return false
+	}
+
+	rawBytes, err := o.Raw()
+	if err != nil {
+		return false
+	}
+
+	return bls12381.PrivKey(privBytes).Equals(bls12381.PrivKey(rawBytes))
+}
+
+// GetPublic returns a public key
+func (privKey CometBLSPrivateKey) GetPublic() crypto.PubKey {
+	return CometBLSPublicKey{bls12381.PubKey(privKey.PubKey().Bytes())}
+}
+
+type CometBLSPublicKey struct {
+	bls12381.PubKey
+}
+
+// Type returns the key type
+func (pubKey CometBLSPublicKey) Type() pb.KeyType {
+	//TODO: temporary hack as no bls type exists in go-libp2p
+	return pb.KeyType_ECDSA
+}
+
+// Raw returns x509 bytes from a private key
+func (pubKey CometBLSPublicKey) Raw() (res []byte, err error) {
+	return pubKey.Bytes(), nil
+}
+
+// Equals returns true if two keys are equal and false otherwise.
+func (pubKey CometBLSPublicKey) Equals(o crypto.Key) bool {
+	pubBytes, err := pubKey.Raw()
+	if err != nil {
+		return false
+	}
+
+	rawBytes, err := o.Raw()
+	if err != nil {
+		return false
+	}
+
+	return bls12381.PubKey(pubBytes).Equals(bls12381.PubKey(rawBytes))
+}
+
+// Verify compares data to a signature
+func (pubKey CometBLSPublicKey) Verify(data, sigBytes []byte) (success bool, err error) {
+	return pubKey.VerifySignature(data, sigBytes), nil
 }
